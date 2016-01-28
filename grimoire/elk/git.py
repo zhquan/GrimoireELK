@@ -121,19 +121,19 @@ class GitEnrich(Enrich):
         # Enrich SH
         identity  = self.get_sh_identity(commit["Author"])
         eitem["author_name"] = identity['name']
-        eitem["author_uuid"] = self.get_uuid(identity, self.get_connector_name())
-        enrollments = api.enrollments(self.sh_db, uuid=eitem["author_uuid"])
+        # eitem["author_uuid"] = self.get_uuid(identity, self.get_connector_name())
+        # enrollments = api.enrollments(self.sh_db, uuid=eitem["author_uuid"])
         # TODO: get the org_name for the current commit time
-        if len(enrollments) > 0:
-            eitem["org_name"] = enrollments[0].organization.name
-        else:
-            eitem["org_name"] = None
+        # if len(enrollments) > 0:
+        #    eitem["org_name"] = enrollments[0].organization.name
+        #else:
+        eitem["org_name"] = None
         # bot
-        u = api.unique_identities(self.sh_db, eitem["author_uuid"])[0]
-        if u.profile:
-            eitem["bot"] = u.profile.is_bot
-        else:
-            eitem["bot"] = 0  # By default, identities are not bots
+        # u = api.unique_identities(self.sh_db, eitem["author_uuid"])[0]
+        # if u.profile:
+        #    eitem["bot"] = u.profile.is_bot
+        #else:
+        #    eitem["bot"] = 0  # By default, identities are not bots
         # Other enrichment
         eitem["repo_name"] = commit["__metadata__"]["origin"]
         # Number of files touched

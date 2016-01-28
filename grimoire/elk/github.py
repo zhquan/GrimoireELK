@@ -259,18 +259,18 @@ class GitHubEnrich(Enrich):
             rich_pull['user_location'] = user['location']
             rich_pull['user_geolocation'] = self.get_geo_point(user['location'])
             identity = self.get_sh_identity(user)
-            rich_pull["user_uuid"] = \
-                self.get_uuid(identity, self.get_connector_name())
-            rich_pull["author_uuid"] = rich_pull["user_uuid"]
+            # rich_pull["user_uuid"] = \
+            #    self.get_uuid(identity, self.get_connector_name())
+            #rich_pull["author_uuid"] = rich_pull["user_uuid"]
         else:
             rich_pull['user_name'] = None
             rich_pull['user_email'] = None
             rich_pull['user_org'] = None
             rich_pull['user_location'] = None
             rich_pull['user_geolocation'] = None
-            rich_pull['user_uuid'] = None
+            #rich_pull['user_uuid'] = None
             rich_pull['author_name'] = None
-            rich_pull['author_uuid'] = None
+            #rich_pull['author_uuid'] = None
 
 
         assignee = None
@@ -285,8 +285,8 @@ class GitHubEnrich(Enrich):
             rich_pull['assignee_geolocation'] = \
                 self.get_geo_point(assignee['location'])
             identity = self.get_sh_identity(assignee)
-            rich_pull["assignee_uuid"] =  \
-                self.get_uuid(identity, self.get_connector_name())
+            # rich_pull["assignee_uuid"] =  \
+            #    self.get_uuid(identity, self.get_connector_name())
         else:
             rich_pull['assignee_name'] = None
             rich_pull['assignee_login'] = None
@@ -294,7 +294,7 @@ class GitHubEnrich(Enrich):
             rich_pull['assignee_org'] = None
             rich_pull['assignee_location'] = None
             rich_pull['assignee_geolocation'] = None
-            rich_pull["assignee_uuid"] = None
+            # rich_pull["assignee_uuid"] = None
 
         rich_pull['title'] = pull['title']
         rich_pull['state'] = pull['state']

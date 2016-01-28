@@ -262,8 +262,9 @@ def enrich_backend(url, clean, backend_name, backend_params):
         enrich_count_merged = 0
 
 
-        enrich_count_merged = enrich_sortinghat(backend_name,
-                                                ocean_backend, enrich_backend)
+        # SH not used in FOSDEM 2016 Lighting Talk
+        # enrich_count_merged = enrich_sortinghat(backend_name,
+        #                                        ocean_backend, enrich_backend)
         # Enrichment for the new items once SH update is finished
         enrich_count = enrich_items(ocean_backend, enrich_backend)
 

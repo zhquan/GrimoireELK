@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 class Enrich(object):
 
     def __init__(self):
-        self.sh_db = Database("root", "", "ocean_sh", "mariadb")
+        # SortingHat not used in FOSDEM 2016
+        # self.sh_db = Database("root", "", "ocean_sh", "mariadb")
+        pass
 
     def set_elastic(self, elastic):
         self.elastic = elastic
