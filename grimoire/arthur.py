@@ -29,7 +29,6 @@ import logging
 import requests
 
 
-from grimoire.elk.sortinghat import SortingHat
 from grimoire.ocean.conf import ConfOcean
 from grimoire.utils import get_elastic
 from grimoire.utils import get_connectors

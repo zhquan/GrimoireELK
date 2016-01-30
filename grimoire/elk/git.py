@@ -30,8 +30,6 @@ from dateutil import parser
 
 from grimoire.elk.enrich import Enrich
 
-from sortinghat import api
-
 class GitEnrich(Enrich):
 
     def __init__(self, git):

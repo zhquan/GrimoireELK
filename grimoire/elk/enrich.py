@@ -25,10 +25,6 @@
 
 import logging
 
-from sortinghat.db.database import Database
-from sortinghat import api
-from sortinghat.exceptions import AlreadyExistsError, NotFoundError, WrappedValueError
-
 logger = logging.getLogger(__name__)
 
 class Enrich(object):

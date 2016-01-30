@@ -35,10 +35,6 @@ from grimoire.ocean.conf import ConfOcean
 from grimoire.utils import get_elastic
 from grimoire.utils import get_params_parser, config_logging
 
-from redis import Redis
-from rq import Queue
-
-
 def get_params():
     ''' Get params definition from ElasticOcean and from all the backends '''
 
@@ -97,34 +93,15 @@ if __name__ == '__main__':
         clean = True
 
     try:
-        if args.loop:
-            # minimal update duration to avoid too much frequency in secs
-            min_update_time = 60
-            loop_update(min_update_time, url, clean, args.debug,
-                        args.redis)
-        elif args.backend:
+        if args.backend:
             if not args.enrich_only:
-                q = Queue('create', connection=Redis(args.redis), async=async_)
-                task_feed = q.enqueue(feed_backend, url, clean, args.fetch_cache,
-                                      args.backend, args.backend_args)
-                logging.info("Queued feed_backend job")
-                logging.info(task_feed)
+                feed_backend(url, clean, args.fetch_cache,
+                             args.backend, args.backend_args)
 
             if args.enrich or args.enrich_only:
-                q = Queue('enrich', connection=Redis(args.redis), async=async_)
-                if async_:
-                    # Task enrich after feed
-                    result = q.enqueue(enrich_backend, url, clean,
-                                       args.backend, args.backend_args,
-                                       depends_on=task_feed)
-                else:
-                    result = q.enqueue(enrich_backend, url, clean,
-                                       args.backend, args.backend_args)
-                logging.info("Queued enrich_backend job")
-                logging.info(result)
-
+                enrich_backend(url, clean, args.backend, args.backend_args)
         else:
-            feed_backends(url, clean, args.debug, args.redis)
+            logging.error("Specify the backend to retrieve the data")
 
     except KeyboardInterrupt:
         logging.info("\n\nReceived Ctrl-C or other break signal. Exiting.\n")

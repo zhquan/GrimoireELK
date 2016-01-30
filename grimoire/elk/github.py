@@ -316,10 +316,6 @@ class GitHubEnrich(Enrich):
 
 
     def enrich_items(self, pulls):
-        # User info filled in sortinghat pre enrichment
-        logging.debug("Updating GitHub users in Elastic")
-        self.users_to_es()
-
         max_items = self.elastic.max_items_bulk
         current = 0
         bulk_json = ""
