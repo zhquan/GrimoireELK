@@ -185,6 +185,7 @@ class ElasticOcean(object):
                 r = requests.post(url, data=json.dumps(scroll_data))
             else:
                 r = requests.get(url)
+        print (url)
 
         items = []
         rjson = r.json()
@@ -194,8 +195,9 @@ class ElasticOcean(object):
         else:
             self.elastic_scroll_id = None
 
-        for hit in rjson["hits"]["hits"]:
-            items.append(hit['_source'])
+        if "hits" in rjson:
+            for hit in rjson["hits"]["hits"]:
+                items.append(hit['_source'])
 
         return items
 
