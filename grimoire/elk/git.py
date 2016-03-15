@@ -133,7 +133,7 @@ class GitEnrich(Enrich):
     def get_item_project(self, item):
         """ Get project mapping enrichment field """
         ds_name = "scm"  # data source name in projects map
-        url_git = item['__metadata__']['origin']
+        url_git = item['origin']
         try:
             project = (self.prjs_map[ds_name][url_git])
         except KeyError:
@@ -163,7 +163,7 @@ class GitEnrich(Enrich):
         eitem["utc_commit"] = (commit_date-commit_date.utcoffset()).replace(tzinfo=None).isoformat()
         eitem["tz"]  = int(commit_date.strftime("%z")[0:3])
         # Other enrichment
-        eitem["repo_name"] = commit["__metadata__"]["origin"]
+        eitem["repo_name"] = commit["origin"]
         # Number of files touched
         eitem["files"] = len(commit["files"])
         # Number of lines changed

@@ -301,7 +301,7 @@ class GitHubEnrich(Enrich):
         if labels != '':
             labels[:-2]
         rich_pull['labels'] = labels
-        rich_pull['repository'] = pull['__metadata__']['origin']
+        rich_pull['repository'] = pull['origin']
 
         if self.sortinghat:
             rich_pull.update(self.get_item_sh(pull))

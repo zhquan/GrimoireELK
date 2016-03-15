@@ -131,7 +131,7 @@ class MBoxEnrich(Enrich):
         # "origin": "dltk-commits"
         # /mnt/mailman_archives/dltk-dev.mbox/dltk-dev.mbox
         ds_name = "mls"  # data source name in projects map
-        mls_list = item['__metadata__']['origin']
+        mls_list = item['origin']
         path = "/mnt/mailman_archives/"
         path += mls_list+".mbox/"+mls_list+".mbox"
 
@@ -157,7 +157,7 @@ class MBoxEnrich(Enrich):
             eitem[map_fields[fn]] = commit[fn]
         # Enrich dates
         eitem["email_date"] = parser.parse(item["metadata__updated_on"]).isoformat()
-        eitem["list"] = item["__metadata__"]["origin"]
+        eitem["list"] = item["origin"]
 
         if self.sortinghat:
             eitem.update(self.get_item_sh(item))

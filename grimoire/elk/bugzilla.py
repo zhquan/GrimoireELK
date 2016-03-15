@@ -90,7 +90,7 @@ class BugzillaEnrich(Enrich):
 
         # Sorting Hat integration: reporter and assigned_to uuids
         if 'assigned_to' in item:
-            identity = BugzillaEnrich.get_sh_identity({'assigned_to':item['assigned_to']})
+            identity = BugzillaEnrich.get_sh_identity({'assigned_to':item["data"]['assigned_to']})
             eitem['assigned_to_uuid'] = self.get_uuid(identity, self.get_connector_name())
             eitem['assigned_to_name'] = identity['name']
             enrollments = self.get_enrollments(eitem['assigned_to_uuid'])
@@ -100,7 +100,7 @@ class BugzillaEnrich(Enrich):
                 eitem["assigned_to_org_name"] = None
 
         if 'reporter' in item:
-            identity = BugzillaEnrich.get_sh_identity({'reporter':item['reporter']})
+            identity = BugzillaEnrich.get_sh_identity({'reporter':item["data"]['reporter']})
             eitem['reporter_uuid'] = self.get_uuid(identity, self.get_connector_name())
             eitem['reporter_name'] = identity['name']
             enrollments = self.get_enrollments(eitem['reporter_uuid'])
@@ -114,9 +114,9 @@ class BugzillaEnrich(Enrich):
     def get_item_project(self, item):
         """ Get project mapping enrichment field """
         ds_name = "its"  # data source name in projects map
-        url = item['__metadata__']['origin']
+        url = item['origin']
         # https://bugs.eclipse.org/bugs/buglist.cgi?product=Mylyn%20Tasks
-        product = item['product'][0]['__text__']
+        product = item["data"]['product'][0]['__text__']
         repo = url+"/buglist.cgi?product="+product
         try:
             project = (self.prjs_map[ds_name][repo])
@@ -131,20 +131,20 @@ class BugzillaEnrich(Enrich):
         identities = []
 
         if 'activity' in item:
-            for event in item['activity']:
+            for event in item["data"]['activity']:
                 identities.append(self.get_sh_identity(event))
         if 'long_desc' in item:
-            for comment in item['long_desc']:
+            for comment in item["data"]['long_desc']:
                 identities.append(self.get_sh_identity(comment))
         elif 'assigned_to' in item:
             identities.append(self.get_sh_identity({'assigned_to':
-                                                    item['assigned_to']}))
+                                                    item["data"]['assigned_to']}))
         elif 'reporter' in item:
             identities.append(self.get_sh_identity({'reporter':
-                                                    item['reporter']}))
+                                                    item["data"]['reporter']}))
         elif 'qa_contact' in item:
             identities.append(self.get_sh_identity({'qa_contact':
-                                                    item['qa_contact']}))
+                                                    item["data"]['qa_contact']}))
         return identities
 
     def enrich_issue(self, issue):
@@ -158,33 +158,33 @@ class BugzillaEnrich(Enrich):
         copy_fields = ["ocean-unique-id"]
 
         for f in copy_fields:
-            if f in issue:
-                eitem[f] = issue[f]
+            if f in issue["data"]:
+                eitem[f] = issue["data"][f]
             else:
                 eitem[f] = None
 
         if "assigned_to" in issue:
-            if "name" in issue["assigned_to"][0]:
-                eitem["assigned_to"] = issue["assigned_to"][0]["name"]
+            if "name" in issue["data"]["assigned_to"][0]:
+                eitem["assigned_to"] = issue["data"]["assigned_to"][0]["name"]
 
         if "reporter" in issue:
-            if "name" in issue["reporter"][0]:
-                eitem["reporter"] = issue["reporter"][0]["name"]
+            if "name" in issue["data"]["reporter"][0]:
+                eitem["reporter"] = issue["data"]["reporter"][0]["name"]
 
-        eitem["bug_id"] = issue['bug_id'][0]['__text__']
-        eitem["status"]  = issue['bug_status'][0]['__text__']
+        eitem["bug_id"] = issue["data"]['bug_id'][0]['__text__']
+        eitem["status"]  = issue["data"]['bug_status'][0]['__text__']
         if "short_desc" in issue:
-            if "__text__" in issue["short_desc"][0]:
-                eitem["summary"]  = issue['short_desc'][0]['__text__']
+            if "__text__" in issue["data"]["short_desc"][0]:
+                eitem["summary"]  = issue["data"]['short_desc'][0]['__text__']
 
         # Component and product
-        eitem["component"] = issue['component'][0]['__text__']
-        eitem["product"]  = issue['product'][0]['__text__']
+        eitem["component"] = issue["data"]['component'][0]['__text__']
+        eitem["product"]  = issue["data"]['product'][0]['__text__']
 
         # Fix dates
-        date_ts = parser.parse(issue['creation_ts'][0]['__text__'])
+        date_ts = parser.parse(issue["data"]['creation_ts'][0]['__text__'])
         eitem['creation_ts'] = date_ts.strftime('%Y-%m-%dT%H:%M:%S')
-        date_ts = parser.parse(issue['delta_ts'][0]['__text__'])
+        date_ts = parser.parse(issue["data"]['delta_ts'][0]['__text__'])
         eitem['changeddate_date'] = date_ts.isoformat()
         eitem['delta_ts'] = date_ts.strftime('%Y-%m-%dT%H:%M:%S')
 
@@ -194,8 +194,8 @@ class BugzillaEnrich(Enrich):
         eitem['url'] = None
 
         if 'long_desc' in issue:
-            eitem['number_of_comments'] = len(issue['long_desc'])
-        eitem['url'] = get_bugzilla_url() + "show_bug.cgi?id=" + issue['bug_id'][0]['__text__']
+            eitem['number_of_comments'] = len(issue["data"]['long_desc'])
+        eitem['url'] = get_bugzilla_url() + "show_bug.cgi?id=" + issue["data"]['bug_id'][0]['__text__']
         eitem['time_to_last_update_days'] = \
             get_time_diff_days(eitem['creation_ts'], eitem['delta_ts'])
 
@@ -239,7 +239,7 @@ class BugzillaEnrich(Enrich):
                 logging.debug("bulk packet sent (%.2f sec, %i total)"
                               % (time()-task_init, total))
             data_json = json.dumps(issue)
-            bulk_json += '{"index" : {"_id" : "%s" } }\n' % (rich_item[self.get_field_unique_id()])
+            bulk_json += '{"index" : {"_id" : "%s" } }\n' % (rich_item["data"][self.get_field_unique_id()])
             bulk_json += data_json +"\n"  # Bulk document
             current += 1
         task_init = time()
@@ -268,7 +268,7 @@ class BugzillaEnrich(Enrich):
                 current = 0
             eitem = self.enrich_issue(issue)
             data_json = json.dumps(eitem)
-            bulk_json += '{"index" : {"_id" : "%s" } }\n' % (issue["bug_id"])
+            bulk_json += '{"index" : {"_id" : "%s" } }\n' % (issue["data"]["bug_id"])
             bulk_json += data_json +"\n"  # Bulk document
             current += 1
         requests.put(url, data=bulk_json)

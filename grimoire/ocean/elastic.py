@@ -85,8 +85,8 @@ class ElasticOcean(object):
         pass
 
     def add_update_date(self, item):
-        """ All item['__metadata__']['updated_on'] from perceval is epoch """
-        entry_lastUpdated = datetime.fromtimestamp(item['__metadata__']['updated_on'])
+        """ All item['updated_on'] from perceval is epoch """
+        entry_lastUpdated = datetime.fromtimestamp(item['updated_on'])
         item['metadata__updated_on'] = entry_lastUpdated.isoformat()
 
     def feed(self, from_date=None):
@@ -115,7 +115,7 @@ class ElasticOcean(object):
             if last_update:
                 # Perceval backend from_date must not include timezone
                 # It always uses the server datetime
-                last_update = last_update.replace(tzinfo=None)
+                # last_update = last_update.replace(tzinfo=None)
                 items = self.perceval_backend.fetch(from_date=last_update)
             else:
                 items = self.perceval_backend.fetch()

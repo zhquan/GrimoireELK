@@ -48,5 +48,5 @@ class GitOcean(ElasticOcean):
         return {"items":mapping}
 
     def _fix_item(self, item):
-        item["ocean-unique-id"] = item["commit"]+"_"+item["__metadata__"]['origin']
-        item["metadata__origin"] = item["__metadata__"]['origin']
+        item["ocean-unique-id"] = item["commit"]+"_"+item['origin']
+        item["metadata__origin"] = item['origin']
