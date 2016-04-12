@@ -161,6 +161,13 @@ def get_params_arthur_parser():
     parser.add_argument('--db-projects-map', help="Projects Mapping DB")
     parser.add_argument('--db-sortinghat', help="SortingHat DB")
 
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
+
+    return parser
+
+
 
 def get_params_parser():
     """Parse command line arguments"""
