@@ -53,9 +53,6 @@ class GitHubEnrich(Enrich):
         # Recover cache data from Elastic
         self.geolocations = self.geo_locations_from_es()
 
-    def get_field_date(self):
-        return "updated_at"
-
     def get_fields_uuid(self):
         return ["assignee_uuid", "user_uuid"]
 
@@ -243,7 +240,7 @@ class GitHubEnrich(Enrich):
         rich_issue = {}
 
         # metadata fields to copy
-        copy_fields = ["metadata__updated_on","metadata__timestamp","ocean-unique-id","origin"]
+        copy_fields = ["metadata__updated_on","metadata__timestamp","uuid","origin"]
         for f in copy_fields:
             if f in item:
                 rich_issue[f] = item[f]

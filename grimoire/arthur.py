@@ -180,6 +180,14 @@ def get_items_from_uuid(uuid, enrich_backend, ocean_backend):
 
     return items
 
+def enrich_arthur(url, ocean_index, origin=None,
+                  db_projects_map=None, db_sortinghat=None,
+                  clean=False, no_incremental=False):
+    """Enrich Ocean index created with arthur"""
+
+    pass
+
+
 
 def enrich_backend(url, clean, backend_name, backend_params, ocean_index=None,
                    ocean_index_enrich = None,

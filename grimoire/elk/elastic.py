@@ -48,14 +48,14 @@ class ElasticSearch(object):
         ''' clean: remove already existing index '''
 
         self.url = url
+        self.mappings = mappings
+        self.clean = clean
         # Valid index for elastic
         if index_name:
             self.set_index(index_name)
         else:
             self.index = None
             self.index_url = None
-        self.mappings = mappings
-        self.clean = clean
         self.max_items_bulk = 100
         self.wait_bulk_seconds = 2  # time to wait to complete a bulk operation
 
@@ -245,7 +245,7 @@ class ElasticSearch(object):
         { %s  %s
         } ''' % (data_query, data_agg)
 
-        logging.debug("%s %s" % (url, data_json))
+        # logging.debug("%s %s" % (url, data_json))
         res = requests.post(url, data=data_json)
         res_json = res.json()
 

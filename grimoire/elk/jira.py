@@ -44,9 +44,6 @@ class JiraEnrich(Enrich):
     def set_elastic(self, elastic):
         self.elastic = elastic
 
-    def get_field_date(self):
-        return "metadata__updated_on"
-
     def get_fields_uuid(self):
         return ["assigned_to_uuid", "reporter_uuid"]
 
@@ -92,9 +89,6 @@ class JiraEnrich(Enrich):
 
         return identities
 
-    def get_field_unique_id(self):
-        return "ocean-unique-id"
-
     def enrich_issue(self, item):
 
         def get_jira_url():
@@ -104,7 +98,7 @@ class JiraEnrich(Enrich):
         eitem = {}
 
         # metadata fields to copy
-        copy_fields = ["metadata__updated_on","metadata__timestamp","ocean-unique-id","origin"]
+        copy_fields = ["metadata__updated_on","metadata__timestamp","uuid","origin"]
         for f in copy_fields:
             if f in item:
                 eitem[f] = item[f]

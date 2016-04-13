@@ -30,6 +30,7 @@ import json
 import logging
 from os import sys
 import redis
+import requests
 import time
 
 
@@ -38,7 +39,7 @@ from arthur.errors import InvalidDateError
 
 from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
 
-from grimoire.utils import get_params_arthur_parser, config_logging
+from grimoire.utils import get_params_arthur_parser, config_logging, get_connector_from_name
 from grimoire.ocean.elastic import ElasticOcean
 
 def str_to_datetime(ts):
@@ -88,13 +89,7 @@ def feed_items(arthur):
 
     logging.info("King Arthur completed his quest.")
 
-def get_arthur(redis_url):
-    conn = connect_to_redis(redis_url)
-
-    sync_mode = True  # Don't use RQ yet
-
-    arthur = Arthur(conn, sync_mode, base_cache_path=None)
-
+def get_repositories():
     repositories = """
         {
         "repositories": [
@@ -104,7 +99,8 @@ def get_arthur(redis_url):
                     "uri": "https://github.com/grimoirelab/arthur.git"
                 },
                 "backend": "git",
-                "origin": "https://github.com/grimoirelab/arthur.git"
+                "origin": "https://github.com/grimoirelab/arthur.git",
+                "elastic_index": "git"
             },
             {
                 "args": {
@@ -112,7 +108,8 @@ def get_arthur(redis_url):
                     "uri": "https://github.com/grimoirelab/perceval.git"
                 },
                 "backend": "git",
-                "origin": "https://github.com/grimoirelab/perceval.git"
+                "origin": "https://github.com/grimoirelab/perceval.git",
+                "elastic_index": "git"
             },
             {
                 "args": {
@@ -120,13 +117,32 @@ def get_arthur(redis_url):
                     "uri": "https://github.com/grimoirelab/GrimoireELK.git"
                 },
                 "backend": "git",
-                "origin": "https://github.com/grimoirelab/GrimoireELK.git"
+                "origin": "https://github.com/grimoirelab/GrimoireELK.git",
+                "elastic_index": "git"
             }
         ]
         }
     """
+    return json.loads(repositories)
 
-    repositories = json.loads(repositories)
+def get_index_origin(origin):
+    index_ = None
+    for repo in get_repositories()['repositories']:
+        if repo["origin"] == origin:
+            if "elastic_index" in repo:
+                index_ = repo["elastic_index"]
+                break
+    return index_
+
+
+def get_arthur(redis_url):
+    conn = connect_to_redis(redis_url)
+
+    sync_mode = True  # Don't use RQ yet
+
+    arthur = Arthur(conn, sync_mode, base_cache_path=None)
+
+    repositories = get_repositories()
 
     logging.info("Reading repositories...")
     for repo in repositories['repositories']:
@@ -138,6 +154,56 @@ def get_arthur(redis_url):
     logging.info("Done. Ready to work!")
 
     return arthur
+
+def show_report(elastic, items_pool):
+    for origin in items_pool:
+        # Items processed
+        print("%s items processed: %i (%i rounds)" % (origin, items_pool[origin]["number"], items_pool[origin]["rounds"]))
+        # Items in ES
+        elastic_ocean.set_index(get_index_origin(origin))
+        r = requests.get(elastic_ocean.index_url+"/_search?size=1")
+        res = r.json()
+        if 'hits' in res:
+            dups = items_pool[origin]["number"]-res['hits']['total']
+            print("%s items in ES: %i (%i dups)" % (origin, res['hits']['total'], dups))
+
+
+def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None):
+    """ In the elastic index all items must be of the same backend """
+
+    # Prepare the enrich backend
+    enrich_cls = get_connector_from_name(backend.lower())[2]
+    enrich_backend = enrich_cls(None, db_sortinghat, db_projects)
+
+    es_index = elastic.index+"_enrich"
+    es_mapping = enrich_backend.get_elastic_mappings()
+    elastic_enrich = ElasticSearch(elastic.url, es_index, es_mapping)
+
+    enrich_backend.set_elastic(elastic_enrich)
+    # We need to enrich from just updated items since last enrichment
+    # Always filter by origin to support multi origin indexes
+    filter_ = {"name":"origin",
+               "value":origin}
+    last_enrich = enrich_backend.get_last_update_from_es(filter_)
+
+    logging.info("Last enrich for %s: %s" % (origin, last_enrich))
+
+    ocean = ElasticOcean(None, last_enrich)
+    ocean.set_elastic(elastic)
+
+    total = 0
+
+    items_pack = []
+
+    for item in ocean:
+        if len(items_pack) >= elastic.max_items_bulk:
+            enrich_backend.enrich_items(items_pack)
+            items_pack = []
+        items_pack.append(item)
+        total += 1
+
+    enrich_backend.enrich_items(items_pack)
+
 
 if __name__ == '__main__':
 
@@ -173,30 +239,35 @@ if __name__ == '__main__':
                 items_pool[item['origin']] = \
                     {"bulk": [], # items to add using bulk interface
                      "task_finished": False, # origin arthur task finished
-                     "number": 0 # total number of items retrieved
+                     "number": 0, # total number of items retrieved,
+                     "last_uuid": None, # last item retrieved,
+                     "rounds": 0 # number of rounds done
                      }
 
-            if items_pool[item['origin']]['bulk']:
-                if item[uuid_field] == items_pool[item['origin']]['bulk'][-1][uuid_field]:
+            if items_pool[item['origin']]['last_uuid']:
+                if item[uuid_field] == items_pool[item['origin']]['last_uuid']:
                     items_pool[item['origin']]["task_finished"] = True
+            items_pool[item['origin']]['last_uuid'] = item[uuid_field]
             item = ElasticOcean.add_update_date(item)
             items_pool[item['origin']]['bulk'].append(item)
-            if len(items_pool[item['origin']]['bulk']) > elastic_ocean.max_items_bulk \
+            if len(items_pool[item['origin']]['bulk']) >= elastic_ocean.max_items_bulk \
                 or items_pool[item['origin']]["task_finished"]:
-                logging.info("Arthur retrieve task finished for %s" % (item['origin']))
-                elastic_ocean.set_index(item['origin'])
+                elastic_ocean.set_index(get_index_origin(item['origin']))
                 elastic_ocean.bulk_upload_sync(items_pool[item['origin']]["bulk"],
                     uuid_field)
                 items_pool[item['origin']]["number"] += \
                     len(items_pool[item['origin']]["bulk"])
+                logging.info("Uploaded %s (%i) to Ocean" % (item['origin'], len(items_pool[item['origin']]["bulk"])))
                 items_pool[item['origin']]["bulk"] = []
                 items_pool[item['origin']]["task_finished"] = False
-            logging.info("%s %s" % (item['origin'], item[uuid_field]))
+                items_pool[item['origin']]["rounds"] += 1
+                # Time to enrich
+                enrich_origin(elastic_ocean, item['backend_name'], item['origin'])
+
 
     except KeyboardInterrupt:
         logging.info("\n\nReceived Ctrl-C or other break signal. Exiting.\n")
-        for origin in items_pool:
-            print(origin, items_pool[origin]["number"])
+        show_report(elastic_ocean, items_pool)
         sys.exit(0)
 
 

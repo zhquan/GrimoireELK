@@ -43,9 +43,6 @@ class StackExchangeEnrich(Enrich):
     def set_elastic(self, elastic):
         self.elastic = elastic
 
-    def get_field_date(self):
-        return "metadata__updated_on"
-
     def get_field_unique_id(self):
         return "question_id"
 
@@ -78,7 +75,7 @@ class StackExchangeEnrich(Enrich):
         eitem = {}
 
         # metadata fields to copy
-        copy_fields = ["metadata__updated_on","metadata__timestamp","ocean-unique-id","origin"]
+        copy_fields = ["metadata__updated_on","metadata__timestamp","uuid","origin"]
         for f in copy_fields:
             if f in item:
                 eitem[f] = item[f]

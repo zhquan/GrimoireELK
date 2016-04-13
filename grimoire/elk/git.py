@@ -43,12 +43,6 @@ class GitEnrich(Enrich):
     def set_elastic(self, elastic):
         self.elastic = elastic
 
-    def get_field_date(self):
-        return "metadata__updated_on"
-
-    def get_field_unique_id(self):
-        return "ocean-unique-id"
-
     def get_fields_uuid(self):
         return ["author_uuid", "committer_uuid"]
 
@@ -136,7 +130,7 @@ class GitEnrich(Enrich):
     def get_rich_commit(self, item):
         eitem = {}
         # metadata fields to copy
-        copy_fields = ["metadata__updated_on","metadata__timestamp","ocean-unique-id","origin"]
+        copy_fields = ["metadata__updated_on","metadata__timestamp","uuid","origin"]
         for f in copy_fields:
             if f in item:
                 eitem[f] = item[f]

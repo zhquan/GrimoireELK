@@ -44,12 +44,6 @@ class MBoxEnrich(Enrich):
     def set_elastic(self, elastic):
         self.elastic = elastic
 
-    def get_field_date(self):
-        return "metadata__updated_on"
-
-    def get_field_unique_id(self):
-        return "ocean-unique-id"
-
     def get_fields_uuid(self):
         return ["from_uuid"]
 
@@ -157,7 +151,7 @@ class MBoxEnrich(Enrich):
         eitem = {}
 
         # metadata fields to copy
-        copy_fields = ["metadata__updated_on","metadata__timestamp","ocean-unique-id","origin"]
+        copy_fields = ["metadata__updated_on","metadata__timestamp","uuid","origin"]
         for f in copy_fields:
             if f in item:
                 eitem[f] = item[f]
