@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 class Enrich(object):
 
-    def __init__(self, db_projects_map = None, db_sortinghat = None, ):
+    def __init__(self, db_projects_map=None, db_sortinghat=None):
         self.sortinghat = False
         if db_sortinghat:
             self.sh_db = Database("root", "", db_sortinghat, "mariadb")
@@ -82,8 +82,10 @@ class Enrich(object):
         return get_connector_name(type(self))
 
     def get_field_date(self):
-        """ Field with the date in the JSON enriched items """
-        raise NotImplementedError
+        return "metadata__timestamp"
+
+    def get_field_unique_id(self):
+        return "uuid"
 
     def get_fields_uuid(self):
         """ Fields with unique identities in the JSON enriched items """

@@ -45,9 +45,14 @@ class ElasticOcean(object):
 
 
     def __init__(self, perceval_backend, from_date=None, fetch_cache=False,
-                 project=None):
+                 project=None, origin=None):
 
         self.perceval_backend = perceval_backend
+        # origin could come in perceval_backend or directly
+        if origin:
+            self.origin = origin
+        else:
+            origin = None
         self.last_update = None  # Last update in ocean items index for feed
         self.from_date = from_date  # fetch from_date
         self.fetch_cache = fetch_cache  # fetch from cache
@@ -190,7 +195,7 @@ class ElasticOcean(object):
         else:
             filters = "{}"
             # If origin Always filter by origin to support multi origin indexes
-            if self.perceval_backend.origin:
+            if self.perceval_backend:
                 filters = '''
                     {"term":
                         { "origin" : "%s"  }
@@ -217,7 +222,7 @@ class ElasticOcean(object):
             }
             """ % (filters)
 
-            logging.debug("%s %s" % (url, query))
+            # logging.debug("%s %s" % (url, query))
 
             r = requests.post(url, data=query)
 
