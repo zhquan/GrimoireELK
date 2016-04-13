@@ -82,7 +82,8 @@ class Enrich(object):
         return get_connector_name(type(self))
 
     def get_field_date(self):
-        return "metadata__timestamp"
+        # return "metadata__timestamp"
+        return "metadata__updated_on"
 
     def get_field_unique_id(self):
         return "uuid"
