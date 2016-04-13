@@ -61,10 +61,12 @@ class ElasticOcean(object):
         """ Field with the update in the JSON items. Now the same in all. """
         return "metadata__updated_on"
 
+    @classmethod
     def get_field_unique_id(self):
-        return "ocean-unique-id"
+        return "uuid"
 
-    def get_elastic_mappings(self):
+    @classmethod
+    def get_elastic_mappings(cls):
         """ origin used to filter in incremental updates """
         mapping = '{}'
 
@@ -88,13 +90,15 @@ class ElasticOcean(object):
         """ Some buggy data sources need fixing (like mbox and message-id) """
         pass
 
-    def add_update_date(self, item):
+    @classmethod
+    def add_update_date(cls, item):
         """ All item['updated_on'] from perceval is epoch """
         updated = datetime.fromtimestamp(item['updated_on'])
         timestamp = datetime.fromtimestamp(item['timestamp'])
         item['metadata__updated_on'] = updated.isoformat()
         # Also add timestamp used in incremental enrichment
         item['metadata__timestamp'] = timestamp.isoformat()
+        return item
 
     def feed(self, from_date=None):
         """ Feed data in Elastic from Perceval """

@@ -36,9 +36,10 @@ import time
 from arthur.arthur import Arthur
 from arthur.errors import InvalidDateError
 
-from grimoire.utils import get_elastic
-from grimoire.utils import get_params_parser, get_params_arthur_parser, config_logging
+from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
 
+from grimoire.utils import get_params_arthur_parser, config_logging
+from grimoire.ocean.elastic import ElasticOcean
 
 def str_to_datetime(ts):
     """Format a string to a datetime object.
@@ -63,9 +64,8 @@ def get_params():
 
     parser = get_params_arthur_parser()
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    return args
 
 def connect_to_redis(redis_url):
     """Create a connection with a Redis database"""
@@ -100,11 +100,27 @@ def get_arthur(redis_url):
         "repositories": [
             {
                 "args": {
+                    "gitpath": "/tmp/arthur_git/",
+                    "uri": "https://github.com/grimoirelab/arthur.git"
+                },
+                "backend": "git",
+                "origin": "https://github.com/grimoirelab/arthur.git"
+            },
+            {
+                "args": {
                     "gitpath": "/tmp/perceval_git/",
                     "uri": "https://github.com/grimoirelab/perceval.git"
                 },
                 "backend": "git",
                 "origin": "https://github.com/grimoirelab/perceval.git"
+            },
+            {
+                "args": {
+                    "gitpath": "/tmp/GrimoireELK_git/",
+                    "uri": "https://github.com/grimoirelab/GrimoireELK.git"
+                },
+                "backend": "git",
+                "origin": "https://github.com/grimoirelab/GrimoireELK.git"
             }
         ]
         }
@@ -129,7 +145,23 @@ if __name__ == '__main__':
 
     args = get_params()
 
+    print(args)
+
     config_logging(args.debug)
+
+    # Items per origin data
+    items_pool = {}
+    uuid_field = ElasticOcean.get_field_unique_id()
+    uuid_last = None
+
+    try:
+        es_index = None  # it will change with origin
+        es_mapping = ElasticOcean.get_elastic_mappings()
+        elastic_ocean = ElasticSearch(args.elastic_url, es_index, es_mapping)
+
+    except ElasticConnectException:
+        logging.error("Can't connect to Elastic Search. Is it running?")
+        sys.exit(1)
 
     try:
         logging.info("King Arthur is on command. Go!")
@@ -137,11 +169,34 @@ if __name__ == '__main__':
         arthur = get_arthur(args.redis)
 
         for item in feed_items(arthur):
-            logging.info("%s %s" % (item['origin'],item['uuid']))
+            if item['origin'] not in items_pool:
+                items_pool[item['origin']] = \
+                    {"bulk": [], # items to add using bulk interface
+                     "task_finished": False, # origin arthur task finished
+                     "number": 0 # total number of items retrieved
+                     }
 
+            if items_pool[item['origin']]['bulk']:
+                if item[uuid_field] == items_pool[item['origin']]['bulk'][-1][uuid_field]:
+                    items_pool[item['origin']]["task_finished"] = True
+            item = ElasticOcean.add_update_date(item)
+            items_pool[item['origin']]['bulk'].append(item)
+            if len(items_pool[item['origin']]['bulk']) > elastic_ocean.max_items_bulk \
+                or items_pool[item['origin']]["task_finished"]:
+                logging.info("Arthur retrieve task finished for %s" % (item['origin']))
+                elastic_ocean.set_index(item['origin'])
+                elastic_ocean.bulk_upload_sync(items_pool[item['origin']]["bulk"],
+                    uuid_field)
+                items_pool[item['origin']]["number"] += \
+                    len(items_pool[item['origin']]["bulk"])
+                items_pool[item['origin']]["bulk"] = []
+                items_pool[item['origin']]["task_finished"] = False
+            logging.info("%s %s" % (item['origin'], item[uuid_field]))
 
     except KeyboardInterrupt:
         logging.info("\n\nReceived Ctrl-C or other break signal. Exiting.\n")
+        for origin in items_pool:
+            print(origin, items_pool[origin]["number"])
         sys.exit(0)
 
 
