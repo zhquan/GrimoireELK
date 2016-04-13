@@ -44,15 +44,25 @@ class ElasticSearch(object):
         """ Return a valid elastic index generated from unique_id """
         return unique_id.replace("/","_").lower()
 
-    def __init__(self, url, index, mappings = None, clean = False):
+    def __init__(self, url, index_name, mappings = None, clean = False):
         ''' clean: remove already existing index '''
 
         self.url = url
         # Valid index for elastic
-        self.index = self.safe_index(index)
-        self.index_url = self.url+"/"+self.index
+        if index_name:
+            self.set_index(index_name)
+        else:
+            self.index = None
+            self.index_url = None
+        self.mappings = mappings
+        self.clean = clean
         self.max_items_bulk = 100
         self.wait_bulk_seconds = 2  # time to wait to complete a bulk operation
+
+    def set_index(self, index_name):
+        """ Configure the index to work with """
+        self.index = self.safe_index(index_name)
+        self.index_url = self.url+"/"+self.index
 
         try:
             r = requests.get(self.index_url)
@@ -68,13 +78,16 @@ class ElasticSearch(object):
                 raise ElasticWriteException()
             else:
                 logging.info("Created index " + self.index_url)
+                if self.mappings:
+                    self.create_mappings(self.mappings)
+
         else:
-            if clean:
+            if self.clean:
                 requests.delete(self.index_url)
                 requests.post(self.index_url)
                 logging.info("Deleted and created index " + self.index_url)
-        if mappings:
-            self.create_mappings(mappings)
+                if self.mappings:
+                    self.create_mappings(self.mappings)
 
 
     def _safe_put_bulk(self, url, bulk_json):
@@ -152,6 +165,9 @@ class ElasticSearch(object):
 
 
     def create_mappings(self, mappings):
+
+        if not self.index_url:
+            return
 
         for _type in mappings:
             # First create the manual mappings
