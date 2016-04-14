@@ -1,0 +1,93 @@
+{
+    "repositories": [
+        {
+            "args": {
+                "gitpath": "/tmp/arthur_git/",
+                "uri": "https://github.com/grimoirelab/arthur.git"
+            },
+            "backend": "git",
+            "elastic_index": "git",
+            "origin": "https://github.com/grimoirelab/arthur.git"
+        },
+        {
+            "args": {
+                "gitpath": "/tmp/perceval_git/",
+                "uri": "https://github.com/grimoirelab/perceval.git"
+            },
+            "backend": "git",
+            "elastic_index": "git",
+            "origin": "https://github.com/grimoirelab/perceval.git"
+        },
+        {
+            "args": {
+                "gitpath": "/tmp/GrimoireELK_git/",
+                "uri": "https://github.com/grimoirelab/GrimoireELK.git"
+            },
+            "backend": "git",
+            "elastic_index": "git",
+            "origin": "https://github.com/grimoirelab/GrimoireELK.git"
+        },
+        {
+            "args": {
+                "from_date": "2016-04-14 03:00",
+                "url": "https://bugs.eclipse.org/bugs/"
+            },
+            "backend": "bugzilla",
+            "elastic_index": "bugzilla",
+            "origin": "https://bugs.eclipse.org/bugs/"
+        },
+        {
+            "args": {
+                "from_date": "2016-03-15",
+                "owner": "elastic",
+                "repository": "filebeat"
+            },
+            "backend": "github",
+            "elastic_index": "github",
+            "origin": "https://github.com/elastic/filebeat"
+        },
+        {
+            "args": {
+                "blacklist_reviews": "67778",
+                "from_date": "2016-04-14 03:00",
+                "max_reviews": 100,
+                "url": "git.eclipse.org",
+                "user": "TODO"
+            },
+            "backend": "gerrit",
+            "elastic_index": "gerrit",
+            "origin": "git.eclipse.org"
+        },
+        {
+            "args": {
+                "mboxes": "/tmp/mbox",
+                "origin1": "mbox-test"
+            },
+            "backend": "mbox",
+            "elastic_index": "mbox",
+            "origin": "mbox-test"
+        },
+        {
+            "args": {
+                "from_date": "2016-04-14",
+                "site": "stackoverflow",
+                "tagged": "python",
+                "token": "TODO"
+            },
+            "backend": "stackexchange",
+            "elastic_index": "stackexchange",
+            "origin": "stackoverflow"
+        },
+        {
+            "args": {
+                "from_date": "2016-04-13",
+                "max_issues": 100,
+                "url": "https://jira.fiware.org",
+                "verify": "False"
+            },
+            "backend": "jira",
+            "elastic_index": "jira",
+            "origin": "https://jira.fiware.org"
+        }
+    ]
+}
