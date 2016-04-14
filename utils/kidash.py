@@ -73,7 +73,7 @@ def list_dashboards(elastic_url, es_index=None):
 
     dash_json_url = elastic.index_url+"/dashboard/_search?size=10000"
 
-    print (dash_json_url)
+    logging.debug(dash_json_url)
 
     r = requests.get(dash_json_url)
 
@@ -85,6 +85,9 @@ def list_dashboards(elastic_url, es_index=None):
 
     for dash in res_json["hits"]["hits"]:
         print (dash["_id"])
+
+    if len(res_json["hits"]["hits"]) == 0:
+        print("There are no dashboards")
 
 
 def import_dashboard(elastic_url, import_file, es_index=None):
