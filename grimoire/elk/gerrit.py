@@ -64,17 +64,17 @@ class GerritEnrich(Enrich):
         item = item['data']
 
         identity = GerritEnrich.get_sh_identity(item['owner'])
-        eitem["uuid"] = self.get_uuid(identity, self.get_connector_name())
-        eitem["name"] = identity['name']
+        eitem["owner_uuid"] = self.get_uuid(identity, self.get_connector_name())
+        eitem["owner_name"] = identity['name']
 
-        enrollments = self.get_enrollments(eitem["uuid"])
+        enrollments = self.get_enrollments(eitem["owner_uuid"])
         # TODO: get the org_name for the current commit time
         if len(enrollments) > 0:
             eitem["org_name"] = enrollments[0].organization.name
         else:
             eitem["org_name"] = None
         # bot
-        u = self.get_unique_identities(eitem["uuid"])[0]
+        u = self.get_unique_identities(eitem["owner_uuid"])[0]
         if u.profile:
             eitem["bot"] = u.profile.is_bot
         else:
@@ -91,8 +91,8 @@ class GerritEnrich(Enrich):
             eitem["domain"] = None
 
         # Unify fields name
-        eitem["author_uuid"] = eitem["uuid"]
-        eitem["author_name"] = eitem["name"]
+        eitem["author_uuid"] = eitem["owner_uuid"]
+        eitem["author_name"] = eitem["owner_name"]
         eitem["author_org_name"] = eitem["org_name"]
         eitem["author_domain"] = eitem["domain"]
 
