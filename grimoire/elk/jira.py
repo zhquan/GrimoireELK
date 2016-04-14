@@ -121,12 +121,10 @@ class JiraEnrich(Enrich):
 
         # Add extra JSON fields used in Kibana (enriched fields)
         eitem['number_of_comments'] = 0
-        eitem['time_to_last_update_days'] = None
-        eitem['url'] = None
 
         if 'long_desc' in issue:
             eitem['number_of_comments'] = len(issue['long_desc'])
-        eitem['url'] = self.perceval_backend.url + "/browse/"+ issue['key']
+        eitem['url'] = item['origin'] + "/browse/"+ issue['key']
         eitem['time_to_last_update_days'] = \
             get_time_diff_days(issue['fields']['created'], issue['fields']['updated'])
 
