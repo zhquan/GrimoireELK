@@ -173,7 +173,7 @@ def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None
 
     # Prepare the enrich backend
     enrich_cls = get_connector_from_name(backend.lower())[2]
-    enrich_backend = enrich_cls(None, db_sortinghat, db_projects)
+    enrich_backend = enrich_cls(None, db_projects, db_sortinghat)
 
     es_index = elastic.index+"_enrich"
     es_mapping = enrich_backend.get_elastic_mappings()
@@ -210,8 +210,6 @@ if __name__ == '__main__':
     app_init = datetime.now()
 
     args = get_params()
-
-    print(args)
 
     config_logging(args.debug)
 
@@ -262,7 +260,8 @@ if __name__ == '__main__':
                 items_pool[item['origin']]["task_finished"] = False
                 items_pool[item['origin']]["rounds"] += 1
                 # Time to enrich
-                enrich_origin(elastic_ocean, item['backend_name'], item['origin'])
+                enrich_origin(elastic_ocean, item['backend_name'],
+                              item['origin'], args.db_sortinghat)
 
 
     except KeyboardInterrupt:
