@@ -29,20 +29,73 @@ import dateutil.parser
 import json
 import logging
 from os import sys
+import pickle
 import redis
 import requests
+from rq import Queue
+from rq import push_connection
 import time
+
+from threading import Thread
 
 
 from arthur.arthur import Arthur
 from arthur.errors import InvalidDateError
+from arthur.common import (CH_PUBSUB,
+                           Q_CREATION_JOBS,
+                           Q_UPDATING_JOBS)
+
 
 from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
 
 from grimoire.utils import get_params_arthur_parser, config_logging, get_connector_from_name
 from grimoire.ocean.elastic import ElasticOcean
 
+
+
 repositories = {}  # arthur repositories
+# Items per origin data
+items_pool = {}
+
+
+class TaskEvents(Thread):
+    """Class to receive the task events"""
+
+    def __init__(self, conn, items_pool, async_mode=True):
+        super().__init__()
+        self.conn = conn
+        self.items_pool=items_pool
+        self.daemon = True
+        self.pubsub = self.conn.pubsub()
+        self.pubsub.subscribe(CH_PUBSUB)
+
+        self.queues = {
+                       Q_CREATION_JOBS : Queue(Q_CREATION_JOBS, async=async_mode),
+                       Q_UPDATING_JOBS : Queue(Q_UPDATING_JOBS, async=async_mode)
+                      }
+
+
+    def run(self):
+        for msg in self.pubsub.listen():
+            if msg['type'] != 'message':
+                continue
+            time.sleep(5) # Wait so the item is received in main thread
+            data = pickle.loads(msg['data'])
+            if data['status'] == 'failed':
+                continue
+
+            job = data['result']
+
+            for origin in self.items_pool:
+                if items_pool[origin]["last_uuid"] == job.last_uuid:
+                    backend_name = items_pool[origin]["backend_name"]
+                    logging.info("Finished task: %s %s", origin, backend_name)
+                    # print(job.last_uuid, job.last_date, job.nitems)
+                    # print(items_pool[origin]["last_uuid"],items_pool[origin]["number"])
+                else:
+                    print("%s <> %s in %s" % (job.last_uuid, items_pool[origin]["last_uuid"], origin))
+
+
 
 def str_to_datetime(ts):
     """Format a string to a datetime object.
@@ -74,6 +127,8 @@ def connect_to_redis(redis_url):
     """Create a connection with a Redis database"""
 
     conn = redis.StrictRedis.from_url(redis_url)
+    push_connection(conn)
+
     logging.debug("Redis connection stablished with %s.", redis_url)
 
     return conn
@@ -101,12 +156,14 @@ def get_index_origin(origin):
     return index_
 
 
-def get_arthur(redis_url):
+def get_arthur(redis_url, items_pool):
     conn = connect_to_redis(redis_url)
+    async_mode = True  # Use RQ
 
-    sync_mode = True  # Don't use RQ yet
+    TaskEvents(conn, items_pool, async_mode=async_mode).start()
 
-    arthur = Arthur(conn, sync_mode, base_cache_path=None)
+
+    arthur = Arthur(conn, async_mode, base_cache_path=None)
 
     logging.info("Reading repositories...")
     for repo in repositories['repositories']:
@@ -178,8 +235,6 @@ if __name__ == '__main__':
 
     config_logging(args.debug)
 
-    # Items per origin data
-    items_pool = {}
     uuid_field = ElasticOcean.get_field_unique_id()
     uuid_last = None
 
@@ -195,7 +250,7 @@ if __name__ == '__main__':
     try:
         logging.info("King Arthur is on command. Go!")
 
-        arthur = get_arthur(args.redis)
+        arthur = get_arthur(args.redis, items_pool)
 
         for item in feed_items(arthur):
             if item['origin'] not in items_pool:
@@ -205,7 +260,8 @@ if __name__ == '__main__':
                      "number": 0, # total number of items retrieved,
                      "last_uuid": None, # last item retrieved,
                      "first_uuid": item['uuid'], # first item retrieved,
-                     "rounds": 0 # number of rounds done
+                     "rounds": 0, # number of rounds done
+                     "backend_name": item['backend_name']
                      }
 
             if items_pool[item['origin']]['last_uuid']:
@@ -220,13 +276,12 @@ if __name__ == '__main__':
             items_pool[item['origin']]['last_uuid'] = item[uuid_field]
             item = ElasticOcean.add_update_date(item)
             items_pool[item['origin']]['bulk'].append(item)
+            items_pool[item['origin']]["number"] += 1
             if len(items_pool[item['origin']]['bulk']) >= elastic_ocean.max_items_bulk \
                 or items_pool[item['origin']]["task_finished"]:
                 elastic_ocean.set_index(get_index_origin(item['origin']))
                 elastic_ocean.bulk_upload_sync(items_pool[item['origin']]["bulk"],
                     uuid_field)
-                items_pool[item['origin']]["number"] += \
-                    len(items_pool[item['origin']]["bulk"])
                 logging.info("Uploaded %s (%i) to Ocean" % (item['origin'],
                              len(items_pool[item['origin']]["bulk"])))
                 if items_pool[item['origin']]["task_finished"]:
