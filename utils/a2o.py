@@ -42,6 +42,8 @@ from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
 from grimoire.utils import get_params_arthur_parser, config_logging, get_connector_from_name
 from grimoire.ocean.elastic import ElasticOcean
 
+repositories = {}  # arthur repositories
+
 def str_to_datetime(ts):
     """Format a string to a datetime object.
     This functions supports several date formats like YYYY-MM-DD,
@@ -89,45 +91,9 @@ def feed_items(arthur):
 
     logging.info("King Arthur completed his quest.")
 
-def get_repositories():
-    repositories = """
-        {
-        "repositories": [
-            {
-                "args": {
-                    "gitpath": "/tmp/arthur_git/",
-                    "uri": "https://github.com/grimoirelab/arthur.git"
-                },
-                "backend": "git",
-                "origin": "https://github.com/grimoirelab/arthur.git",
-                "elastic_index": "git"
-            },
-            {
-                "args": {
-                    "gitpath": "/tmp/perceval_git/",
-                    "uri": "https://github.com/grimoirelab/perceval.git"
-                },
-                "backend": "git",
-                "origin": "https://github.com/grimoirelab/perceval.git",
-                "elastic_index": "git"
-            },
-            {
-                "args": {
-                    "gitpath": "/tmp/GrimoireELK_git/",
-                    "uri": "https://github.com/grimoirelab/GrimoireELK.git"
-                },
-                "backend": "git",
-                "origin": "https://github.com/grimoirelab/GrimoireELK.git",
-                "elastic_index": "git"
-            }
-        ]
-        }
-    """
-    return json.loads(repositories)
-
 def get_index_origin(origin):
-    index_ = None
-    for repo in get_repositories()['repositories']:
+    index_ = origin
+    for repo in repositories['repositories']:
         if repo["origin"] == origin:
             if "elastic_index" in repo:
                 index_ = repo["elastic_index"]
@@ -141,8 +107,6 @@ def get_arthur(redis_url):
     sync_mode = True  # Don't use RQ yet
 
     arthur = Arthur(conn, sync_mode, base_cache_path=None)
-
-    repositories = get_repositories()
 
     logging.info("Reading repositories...")
     for repo in repositories['repositories']:
@@ -164,8 +128,7 @@ def show_report(elastic, items_pool):
         r = requests.get(elastic_ocean.index_url+"/_search?size=1")
         res = r.json()
         if 'hits' in res:
-            dups = items_pool[origin]["number"]-res['hits']['total']
-            print("%s items in ES: %i (%i dups)" % (origin, res['hits']['total'], dups))
+            print("%s items in ES: %i" % (origin, res['hits']['total']))
 
 
 def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None):
@@ -211,6 +174,8 @@ if __name__ == '__main__':
 
     args = get_params()
 
+    repositories = json.load(args.repositories)
+
     config_logging(args.debug)
 
     # Items per origin data
@@ -239,11 +204,18 @@ if __name__ == '__main__':
                      "task_finished": False, # origin arthur task finished
                      "number": 0, # total number of items retrieved,
                      "last_uuid": None, # last item retrieved,
+                     "first_uuid": item['uuid'], # first item retrieved,
                      "rounds": 0 # number of rounds done
                      }
 
             if items_pool[item['origin']]['last_uuid']:
+                # If this item is the same than the more recent one
+                # the retrieval task has finished (no more updates)
                 if item[uuid_field] == items_pool[item['origin']]['last_uuid']:
+                    # Normally last_uuid is the most recent one
+                    items_pool[item['origin']]["task_finished"] = True
+                elif item[uuid_field] == items_pool[item['origin']]['first_uuid']:
+                    # In gerrit the first uuid is the most recent one
                     items_pool[item['origin']]["task_finished"] = True
             items_pool[item['origin']]['last_uuid'] = item[uuid_field]
             item = ElasticOcean.add_update_date(item)
@@ -255,13 +227,15 @@ if __name__ == '__main__':
                     uuid_field)
                 items_pool[item['origin']]["number"] += \
                     len(items_pool[item['origin']]["bulk"])
-                logging.info("Uploaded %s (%i) to Ocean" % (item['origin'], len(items_pool[item['origin']]["bulk"])))
+                logging.info("Uploaded %s (%i) to Ocean" % (item['origin'],
+                             len(items_pool[item['origin']]["bulk"])))
+                if items_pool[item['origin']]["task_finished"]:
+                    # Time to enrich incremental if the task has finished
+                    enrich_origin(elastic_ocean, item['backend_name'],
+                                  item['origin'], args.db_sortinghat)
+                    items_pool[item['origin']]["rounds"] += 1
                 items_pool[item['origin']]["bulk"] = []
                 items_pool[item['origin']]["task_finished"] = False
-                items_pool[item['origin']]["rounds"] += 1
-                # Time to enrich
-                enrich_origin(elastic_ocean, item['backend_name'],
-                              item['origin'], args.db_sortinghat)
 
 
     except KeyboardInterrupt:

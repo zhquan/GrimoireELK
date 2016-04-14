@@ -160,6 +160,9 @@ def get_params_arthur_parser():
                         help="Only enrich items")
     parser.add_argument('--db-projects-map', help="Projects Mapping DB")
     parser.add_argument('--db-sortinghat', help="SortingHat DB")
+    parser.add_argument('repositories', nargs='?', type=argparse.FileType('r'),
+                        default=sys.stdin,
+                        help="Path to JSON file with repositories")
 
     if len(sys.argv) == 1:
         parser.print_help()
