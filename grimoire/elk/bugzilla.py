@@ -50,9 +50,6 @@ class BugzillaEnrich(Enrich):
     def get_fields_uuid(self):
         return ["assigned_to_uuid", "reporter_uuid"]
 
-    def get_field_unique_id(self):
-        return "ocean-unique-id"
-
     @classmethod
     def get_sh_identity(cls, user):
         """ Return a Sorting Hat identity using bugzilla user data """
@@ -166,8 +163,8 @@ class BugzillaEnrich(Enrich):
 
     def enrich_issue(self, item):
 
-        def get_bugzilla_url():
-            u = urlparse(self.perceval_backend.url)
+        def get_bugzilla_url(item):
+            u = urlparse(item['origin'])
             return u.scheme+"//"+u.netloc
 
         if 'bug_id' not in item['data']:
@@ -177,7 +174,7 @@ class BugzillaEnrich(Enrich):
         eitem = {}
 
         # metadata fields to copy
-        copy_fields = ["metadata__updated_on","metadata__timestamp","ocean-unique-id","origin"]
+        copy_fields = ["metadata__updated_on","metadata__timestamp","uuid","origin"]
         for f in copy_fields:
             if f in item:
                 eitem[f] = item[f]
@@ -219,7 +216,8 @@ class BugzillaEnrich(Enrich):
 
         if 'long_desc' in issue:
             eitem['number_of_comments'] = len(issue['long_desc'])
-        eitem['url'] = get_bugzilla_url() + "show_bug.cgi?id=" + issue['bug_id'][0]['__text__']
+        eitem['url'] = get_bugzilla_url(item) + "show_bug.cgi?id=" + \
+                        issue['bug_id'][0]['__text__']
         eitem['time_to_last_update_days'] = \
             get_time_diff_days(eitem['creation_ts'], eitem['delta_ts'])
 
