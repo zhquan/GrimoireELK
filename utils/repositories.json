@@ -60,8 +60,8 @@
         },
         {
             "args": {
-                "mboxes": "/tmp/mbox",
-                "origin1": "mbox-test"
+                "dirpath": "/tmp/mbox",
+                "uri": "mbox-test"
             },
             "backend": "mbox",
             "elastic_index": "mbox",
