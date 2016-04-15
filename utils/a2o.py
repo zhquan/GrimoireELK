@@ -154,7 +154,7 @@ def get_arthur(redis_url, items_pool):
 
     logging.info("Reading repositories...")
     backends_all = ['bugzilla','gerrit','git','github','jira','mbox','stackexchange']
-    backends_on = ['gerrit']
+    backends_on = ['bugzilla','gerrit','git','github','jira','mbox']
     for repo in repositories['repositories']:
         if repo['backend'] not in backends_on:
             continue
@@ -242,7 +242,7 @@ def check_task_finished(elastic_ocean, items_pool):
             filter_ = {"name":"origin", "value":task_finished.origin}
             last_item_es_date = elastic_ocean.get_last_date("metadata__updated_on", filter_).replace(tzinfo=None)
             # last item for the task update time
-            last_item_date = datetime.fromtimestamp(task_finished.last_date)
+            last_item_date = datetime.fromtimestamp(task_finished.max_date)
             if last_item_date >= last_item_es_date:
                 # last item in task will update the elasticsearch last item
                 items_pool[task_finished.origin]["task_event_last_uuid"] = task_finished.last_uuid
