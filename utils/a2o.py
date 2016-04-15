@@ -36,15 +36,13 @@ from rq import Queue
 from rq import push_connection
 import time
 
+import queue
 from threading import Thread
 
 
 from arthur.arthur import Arthur
 from arthur.errors import InvalidDateError
-from arthur.common import (CH_PUBSUB,
-                           Q_CREATION_JOBS,
-                           Q_UPDATING_JOBS)
-
+from arthur.common import CH_PUBSUB
 
 from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
 
@@ -57,6 +55,7 @@ repositories = {}  # arthur repositories
 # Items per origin data
 items_pool = {}
 
+task_finish_queue = queue.Queue()
 
 class TaskEvents(Thread):
     """Class to receive the task events"""
@@ -69,33 +68,21 @@ class TaskEvents(Thread):
         self.pubsub = self.conn.pubsub()
         self.pubsub.subscribe(CH_PUBSUB)
 
-        self.queues = {
-                       Q_CREATION_JOBS : Queue(Q_CREATION_JOBS, async=async_mode),
-                       Q_UPDATING_JOBS : Queue(Q_UPDATING_JOBS, async=async_mode)
-                      }
-
 
     def run(self):
         for msg in self.pubsub.listen():
             if msg['type'] != 'message':
                 continue
-            time.sleep(5) # Wait so the item is received in main thread
             data = pickle.loads(msg['data'])
             if data['status'] == 'failed':
                 continue
 
             job = data['result']
 
-            for origin in self.items_pool:
-                if items_pool[origin]["last_uuid"] == job.last_uuid:
-                    backend_name = items_pool[origin]["backend_name"]
-                    logging.info("Finished task: %s %s", origin, backend_name)
-                    # print(job.last_uuid, job.last_date, job.nitems)
-                    # print(items_pool[origin]["last_uuid"],items_pool[origin]["number"])
-                else:
-                    print("%s <> %s in %s" % (job.last_uuid, items_pool[origin]["last_uuid"], origin))
+            # Send to a shared Queue the job.last_uuid and process it in main
 
-
+            logging.info("Finished task: %s %s", job.origin, job.backend)
+            task_finish_queue.put(job)
 
 def str_to_datetime(ts):
     """Format a string to a datetime object.
@@ -166,7 +153,11 @@ def get_arthur(redis_url, items_pool):
     arthur = Arthur(conn, async_mode, base_cache_path=None)
 
     logging.info("Reading repositories...")
+    backends_all = ['bugzilla','gerrit','git','github','jira','mbox','stackexchange']
+    backends_on = ['gerrit']
     for repo in repositories['repositories']:
+        if repo['backend'] not in backends_on:
+            continue
         from_date = repo['args'].get('from_date', None)
         if from_date:
             repo['args']['from_date'] = str_to_datetime(from_date)
@@ -224,6 +215,55 @@ def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None
 
     enrich_backend.enrich_items(items_pack)
 
+def elastic_get_item(elastic, uuid, origin):
+    item = None
+    elastic.set_index(get_index_origin(origin))
+    r = requests.get(elastic_ocean.index_url+"/items/%s" % (uuid))
+    res = r.json()
+    if "found" in res and res["found"]:
+        item = res["_source"]
+    return item
+
+def check_task_finished(elastic_ocean, items_pool):
+    try:
+        task_finished = task_finish_queue.get_nowait()
+        if task_finished.origin not in items_pool:
+            add_origin(items_pool, task_finished.origin)
+
+        # Check that the last_uuid has not been processed yet
+        last_item_es = elastic_get_item(elastic_ocean, task_finished.last_uuid, task_finished.origin)
+        if not last_item_es:
+            items_pool[task_finished.origin]["task_event_last_uuid"] = task_finished.last_uuid
+            items_pool[task_finished.origin]["task_event_nitems"] = task_finished.nitems
+        else:
+            # Task last item already in elastic search
+            # Check task update >= ES max update
+            elastic_ocean.set_index(get_index_origin(task_finished.origin))
+            filter_ = {"name":"origin", "value":task_finished.origin}
+            last_item_es_date = elastic_ocean.get_last_date("metadata__updated_on", filter_).replace(tzinfo=None)
+            # last item for the task update time
+            last_item_date = datetime.fromtimestamp(task_finished.last_date)
+            if last_item_date >= last_item_es_date:
+                # last item in task will update the elasticsearch last item
+                items_pool[task_finished.origin]["task_event_last_uuid"] = task_finished.last_uuid
+                items_pool[task_finished.origin]["task_event_nitems"] = task_finished.nitems
+            else:
+                logging.warning ("%s > %s" % (last_item_es_date, last_item_date))
+                logging.warning("[TASK EVENT] Task event received after last item.")
+                logging.warning("Post task enrichment won't be done!")
+    except queue.Empty:
+        pass
+
+def add_origin(items_pool, origin):
+    items_pool[origin] = \
+        {"bulk": [], # items to add using bulk interface
+         "task_finished": False, # received all items for the task
+         "task_event_last_uuid": None, # last item in the task
+         "task_event_nitems": None, # number of items in the task
+         "number": 0, # total number of items retrieved
+         "rounds": 0, # number of rounds done
+         "last_round_nitems": 0 # number of items in last round
+         }
 
 if __name__ == '__main__':
 
@@ -253,43 +293,42 @@ if __name__ == '__main__':
         arthur = get_arthur(args.redis, items_pool)
 
         for item in feed_items(arthur):
-            if item['origin'] not in items_pool:
-                items_pool[item['origin']] = \
-                    {"bulk": [], # items to add using bulk interface
-                     "task_finished": False, # origin arthur task finished
-                     "number": 0, # total number of items retrieved,
-                     "last_uuid": None, # last item retrieved,
-                     "first_uuid": item['uuid'], # first item retrieved,
-                     "rounds": 0, # number of rounds done
-                     "backend_name": item['backend_name']
-                     }
-
-            if items_pool[item['origin']]['last_uuid']:
-                # If this item is the same than the more recent one
-                # the retrieval task has finished (no more updates)
-                if item[uuid_field] == items_pool[item['origin']]['last_uuid']:
-                    # Normally last_uuid is the most recent one
-                    items_pool[item['origin']]["task_finished"] = True
-                elif item[uuid_field] == items_pool[item['origin']]['first_uuid']:
-                    # In gerrit the first uuid is the most recent one
-                    items_pool[item['origin']]["task_finished"] = True
-            items_pool[item['origin']]['last_uuid'] = item[uuid_field]
+            logging.info(item['uuid'])
             item = ElasticOcean.add_update_date(item)
+            if item['origin'] not in items_pool:
+                add_origin(items_pool, item['origin'])
+
+            # Check for finished tasks after every item
+            check_task_finished(elastic_ocean, items_pool)
+
+            if items_pool[item['origin']]['task_event_last_uuid']:
+                if item[uuid_field] == items_pool[item['origin']]['task_event_last_uuid']:
+                    items_pool[item['origin']]["task_finished"] = True
+                    logging.info("Last item received: %s", item[uuid_field])
             items_pool[item['origin']]['bulk'].append(item)
             items_pool[item['origin']]["number"] += 1
+            items_pool[item['origin']]["last_round_nitems"] += 1
             if len(items_pool[item['origin']]['bulk']) >= elastic_ocean.max_items_bulk \
                 or items_pool[item['origin']]["task_finished"]:
                 elastic_ocean.set_index(get_index_origin(item['origin']))
                 elastic_ocean.bulk_upload_sync(items_pool[item['origin']]["bulk"],
                     uuid_field)
+                items_pool[item['origin']]["bulk"] = []
                 logging.info("Uploaded %s (%i) to Ocean" % (item['origin'],
                              len(items_pool[item['origin']]["bulk"])))
-                if items_pool[item['origin']]["task_finished"]:
-                    # Time to enrich incremental if the task has finished
-                    enrich_origin(elastic_ocean, item['backend_name'],
-                                  item['origin'], args.db_sortinghat)
-                    items_pool[item['origin']]["rounds"] += 1
-                items_pool[item['origin']]["bulk"] = []
+            if items_pool[item['origin']]["task_finished"]:
+                logging.info("[FINISHED] task in %s" % (item['origin']))
+                # Time to enrich incremental if the task has finished
+                enrich_origin(elastic_ocean, item['backend_name'],
+                              item['origin'], args.db_sortinghat)
+                if items_pool[item['origin']]["task_event_nitems"] == items_pool[item['origin']]["last_round_nitems"]:
+                    logging.info("[ROUND] NUMBER OF ITEMS OK: %i == %i"
+                    % (items_pool[item['origin']]["task_event_nitems"], items_pool[item['origin']]["last_round_nitems"]))
+                else:
+                    logging.error("[ROUND] NUMBER OF ITEMS WRONG %i <> %i"
+                    % (items_pool[item['origin']]["task_event_nitems"], items_pool[item['origin']]["last_round_nitems"]))
+                items_pool[item['origin']]["rounds"] += 1
+                items_pool[item['origin']]["last_round_nitems"] = 0
                 items_pool[item['origin']]["task_finished"] = False
 
 
