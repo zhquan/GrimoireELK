@@ -153,10 +153,10 @@ class GitEnrich(Enrich):
 
             commit_json = r.json()
             author_login = None
-            if 'author' in commit_json:
+            if 'author' in commit_json and commit_json['author']:
                 author_login = commit_json['author']['login']
             user_login = None
-            if 'committer' in commit_json:
+            if 'committer' in commit_json and commit_json['committer']:
                 user_login = commit_json['committer']['login']
             if rol == "author":
                 login = author_login
