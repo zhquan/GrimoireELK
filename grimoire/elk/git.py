@@ -32,7 +32,7 @@ from grimoire.elk.enrich import Enrich
 
 COREOS_INC_MEMBERS_FILE = "/home/bitergia/devel/GrimoireELK/utils/coreos-inc.members.json"
 GITHUB_API_URL = "https://api.github.com"
-GITHUB_API_TOKEN = ''
+GITHUB_API_TOKEN = 'd8653d1efa690bf72d8cc75ac7e57f1675f036a0'
 
 GITHUB = 'https://github.com/'
 
@@ -152,8 +152,12 @@ class GitEnrich(Enrich):
             logging.debug("Rate limit pending: %s" % (r.headers['X-RateLimit-Remaining']))
 
             commit_json = r.json()
-            author_login = commit_json['author']['login']
-            user_login = commit_json['committer']['login']
+            author_login = None
+            if 'author' in commit_json:
+                author_login = commit_json['author']['login']
+            user_login = None
+            if 'committer' in commit_json:
+                user_login = commit_json['committer']['login']
             if rol == "author":
                 login = author_login
             elif rol == "committer":
