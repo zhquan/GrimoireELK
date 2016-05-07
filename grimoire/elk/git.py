@@ -30,7 +30,11 @@ from dateutil import parser
 
 from grimoire.elk.enrich import Enrich
 
-from .github import GITHUB
+COREOS_INC_MEMBERS_FILE = "/home/bitergia/devel/GrimoireELK/utils/coreos-inc.members.json"
+GITHUB_API_URL = "https://api.github.com"
+GITHUB_API_TOKEN = ''
+
+GITHUB = 'https://github.com/'
 
 class GitEnrich(Enrich):
 
@@ -39,6 +43,7 @@ class GitEnrich(Enrich):
         self.elastic = None
         self.perceval_backend = git
         self.index_git = "git"
+        self.github_logins = {}
 
     def set_elastic(self, elastic):
         self.elastic = elastic
@@ -133,7 +138,34 @@ class GitEnrich(Enrich):
             project = None
         return {"project": project}
 
-    def get_rich_commit(self, item):
+    def get_github_login(self, user, rol, commit_hash, repo):
+        """ rol: author or committer """
+        login = None
+        try:
+            login = self.github_logins[user]
+        except KeyError:
+            # Get the login from github API
+            commit_url = GITHUB_API_URL+"/repos/%s/commits/%s" % (repo, commit_hash)
+            headers = {'Authorization': 'token ' + GITHUB_API_TOKEN}
+            r = requests.get(commit_url, headers=headers)
+            r.raise_for_status()
+            logging.debug("Rate limit pending: %s" % (r.headers['X-RateLimit-Remaining']))
+
+            commit_json = r.json()
+            author_login = commit_json['author']['login']
+            user_login = commit_json['committer']['login']
+            if rol == "author":
+                login = author_login
+            elif rol == "committer":
+                login = author_login
+            else:
+                logging.error("Wrong rol: %s" % (rol))
+                raise RuntimeError
+            self.github_logins[user] = login
+            logging.debug("%s is %s in github" % (user, login))
+        return login
+
+    def get_rich_commit(self, item, coreos_logins):
         eitem = {}
         # metadata fields to copy
         copy_fields = ["metadata__updated_on","metadata__timestamp","ocean-unique-id","origin"]
@@ -207,6 +239,22 @@ class GitEnrich(Enrich):
             eitem['github_repo'] = item['origin'].replace(GITHUB,'').replace('.git','')
             eitem["url_id"] = eitem['github_repo']+"/commit/"+eitem['hash']
 
+            # Also we get the github login for author and contributor
+
+            author_login = self.get_github_login(eitem["Author"], "author", eitem['hash'], eitem['github_repo'])
+            committer_login = self.get_github_login(eitem["Committer"], "committer", eitem['hash'], eitem['github_repo'])
+
+            if author_login in coreos_logins:
+                eitem['author_org_coreos'] = 'CoreOS'
+            else:
+                eitem['author_org_coreos'] = 'Community'
+
+            if committer_login in coreos_logins:
+                eitem['committer_org_coreos'] = 'CoreOS'
+            else:
+                eitem['committer_org_coreos'] = 'Community'
+
+
         if 'project' in item:
             eitem['project'] = item['project']
 
@@ -223,6 +271,17 @@ class GitEnrich(Enrich):
         current = 0
         bulk_json = ""
 
+        # We need to load the CoreOS github users to mark them
+        logging.debug("Loading CoreOS users ...")
+        if GITHUB_API_TOKEN == '':
+            logging.error("you must FILL the API TOKEN.")
+            raise RuntimeError
+        coreos_logins = []
+        with open(COREOS_INC_MEMBERS_FILE) as json_file:
+            coreos_github_users = json.load(json_file)
+            for user in coreos_github_users:
+                coreos_logins.append(user['login'])
+
         url = self.elastic.index_url+'/items/_bulk'
 
         logging.debug("Adding items to %s (in %i packs)" % (url, max_items))
@@ -233,7 +292,7 @@ class GitEnrich(Enrich):
                 bulk_json = ""
                 current = 0
 
-            rich_commit = self.get_rich_commit(commit)
+            rich_commit = self.get_rich_commit(commit, coreos_logins)
             data_json = json.dumps(rich_commit)
             bulk_json += '{"index" : {"_id" : "%s" } }\n' % \
                 (rich_commit[self.get_field_unique_id()])
