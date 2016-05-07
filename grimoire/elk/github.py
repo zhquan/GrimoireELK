@@ -35,6 +35,7 @@ from .utils import get_time_diff_days
 from grimoire.elk.enrich import Enrich
 
 GITHUB = 'https://github.com/'
+COREOS_INC_MEMBERS_FILE = "/home/bitergia/devel/GrimoireELK/utils/coreos-inc.members.json"
 
 class GitHubEnrich(Enrich):
 
@@ -239,7 +240,7 @@ class GitHubEnrich(Enrich):
     def get_field_unique_id(self):
         return "ocean-unique-id"
 
-    def get_rich_issue(self, item):
+    def get_rich_issue(self, item, coreos_logins):
         rich_issue = {}
 
         # metadata fields to copy
@@ -262,6 +263,10 @@ class GitHubEnrich(Enrich):
             rich_issue['time_open_days'] = rich_issue['time_to_close_days']
 
         rich_issue['user_login'] = issue['user']['login']
+        if rich_issue['user_login'] in coreos_logins:
+            rich_issue['user_org_coreos'] = 'CoreOS'
+        else:
+            rich_issue['user_org_coreos'] = 'Community'
         user = issue['user_data']
 
         if user is not None:
@@ -281,13 +286,17 @@ class GitHubEnrich(Enrich):
             rich_issue['user_location'] = None
             rich_issue['user_geolocation'] = None
             rich_issue['author_name'] = None
-
+            rich_issue['user_org_coreos'] = None
 
         assignee = None
 
         if issue['assignee'] is not None:
             assignee = issue['assignee_data']
             rich_issue['assignee_login'] = issue['assignee']['login']
+            if rich_issue['assignee_login'] in coreos_logins:
+                rich_issue['assignee_org_coreos'] = 'CoreOS'
+            else:
+                rich_issue['assignee_org_coreos'] = 'Community'
             rich_issue['assignee_name'] = assignee['name']
             rich_issue['assignee_email'] = assignee['email']
             if rich_issue['assignee_email']:
@@ -304,6 +313,7 @@ class GitHubEnrich(Enrich):
             rich_issue['assignee_org'] = None
             rich_issue['assignee_location'] = None
             rich_issue['assignee_geolocation'] = None
+            rich_issue['assignee_org_coreos'] = None
 
         rich_issue['id'] = issue['id']
         rich_issue['id_in_repo'] = issue['html_url'].split("/")[-1]
@@ -345,6 +355,14 @@ class GitHubEnrich(Enrich):
 
         url = self.elastic.index_url+'/items/_bulk'
 
+        # We need to load the CoreOS github users to mark them
+        logging.debug("Loading CoreOS users ...")
+        coreos_logins = []
+        with open(COREOS_INC_MEMBERS_FILE) as json_file:
+            coreos_github_users = json.load(json_file)
+            for user in coreos_github_users:
+                coreos_logins.append(user['login'])
+
         logging.debug("Adding items to %s (in %i packs)" % (url, max_items))
 
         for issue in issues:
@@ -353,7 +371,7 @@ class GitHubEnrich(Enrich):
                 bulk_json = ""
                 current = 0
 
-            rich_issue = self.get_rich_issue(issue)
+            rich_issue = self.get_rich_issue(issue, coreos_logins)
             data_json = json.dumps(rich_issue)
             bulk_json += '{"index" : {"_id" : "%s" } }\n' % (rich_issue[self.get_field_unique_id()])
             bulk_json += data_json +"\n"  # Bulk document
