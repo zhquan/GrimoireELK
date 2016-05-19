@@ -162,7 +162,7 @@ def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None
 
     logging.info("Last enrich for %s: %s" % (origin, last_enrich))
 
-    ocean = ElasticOcean(None, last_enrich)
+    ocean = ElasticOcean(None, from_date=last_enrich, origin=origin)
     ocean.set_elastic(elastic)
 
     total = 0
