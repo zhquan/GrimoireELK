@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 #
-# Arthur2Ocean tool
+# Enrich arthur items in Elastic for using in Kibana
 #
 # Copyright (C) 2016 Bitergia
 #
@@ -24,30 +24,26 @@
 #
 
 import argparse
+import logging
+import pickle
 
 from datetime import datetime
-import dateutil.parser
-
-import json
-import logging
 from os import sys
-import pickle
-import redis
-import requests
-import time
-import queue
-
-from arthur.common import CH_PUBSUB
-
-from rq import push_connection
 from threading import Thread
 from time import sleep
 
-from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
+import dateutil.parser
+import redis
+import queue
+from rq import push_connection
 
+from arthur.common import CH_PUBSUB
+
+from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
 from grimoire.utils import config_logging, get_connector_from_name
 from grimoire.ocean.elastic import ElasticOcean
 
+TIME_TO_CHECK = 1  # seconds to wait for new arthur events
 task_finish_queue = queue.Queue() # shared queue between threads
 
 class TaskEvents(Thread):
@@ -182,15 +178,6 @@ def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None
 
     enrich_backend.enrich_items(items_pack)
 
-def elastic_get_item(elastic, uuid, origin):
-    item = None
-    elastic.set_index(get_index_origin(origin))
-    r = requests.get(elastic_ocean.index_url+"/items/%s" % (uuid))
-    res = r.json()
-    if "found" in res and res["found"]:
-        item = res["_source"]
-    return item
-
 def check_task_finished(elastic_ocean):
     try:
         task_finished = task_finish_queue.get_nowait()
@@ -206,11 +193,8 @@ if __name__ == '__main__':
 
     config_logging(args.debug)
 
-    uuid_field = ElasticOcean.get_field_unique_id()
-    uuid_last = None
-
     try:
-        es_index = args.index  # it will change with origin
+        es_index = args.index  # ocean index name
         es_mapping = ElasticOcean.get_elastic_mappings()
         elastic_ocean = ElasticSearch(args.elastic_url, es_index, es_mapping)
 
@@ -219,12 +203,12 @@ if __name__ == '__main__':
         sys.exit(1)
 
     try:
-        logging.info("Magic Merlin is on command. Go!")
+        logging.info("Magician Merlin is doing spells!")
 
-        arthur = get_arthur_events(args.redis)
+        get_arthur_events(args.redis)
 
         while(True):
-            sleep(1)
+            sleep(TIME_TO_CHECK)
             # Check for finished tasks every second
             check_task_finished(elastic_ocean)
 
