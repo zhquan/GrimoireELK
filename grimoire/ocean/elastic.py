@@ -48,11 +48,12 @@ class ElasticOcean(object):
                  project=None, origin=None):
 
         self.perceval_backend = perceval_backend
+        self.origin = None
         # origin could come in perceval_backend or directly
+        if perceval_backend:
+            self.origin = perceval_backend.origin
         if origin:
             self.origin = origin
-        else:
-            origin = None
         self.last_update = None  # Last update in ocean items index for feed
         self.from_date = from_date  # fetch from_date
         self.fetch_cache = fetch_cache  # fetch from cache
@@ -195,12 +196,12 @@ class ElasticOcean(object):
         else:
             filters = "{}"
             # If origin Always filter by origin to support multi origin indexes
-            if self.perceval_backend:
+            if self.origin:
                 filters = '''
                     {"term":
                         { "origin" : "%s"  }
                     }
-                ''' % (self.perceval_backend.origin)
+                ''' % (self.origin)
 
             if self.from_date:
                 date_field = self.get_field_date()
