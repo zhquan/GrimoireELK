@@ -124,52 +124,6 @@ def config_logging(debug):
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("requests").setLevel(logging.WARNING)
 
-A2O_USAGE_MSG = ''
-A2O_DESC_MSG = ''
-A2O_EPILOG_MSG = ''
-P2O_USAGE_MSG = ''
-P2O_DESC_MSG = ''
-P2O_EPILOG_MSG = ''
-
-
-def get_params_arthur_parser():
-    """Parse command line arguments"""
-
-    parser = argparse.ArgumentParser(usage=A2O_USAGE_MSG,
-                                     description=A2O_DESC_MSG,
-                                     epilog=A2O_EPILOG_MSG,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter,
-                                     add_help=False)
-
-    ElasticOcean.add_params(parser)
-
-    parser.add_argument('-h', '--help', action='help',
-                       help=argparse.SUPPRESS)
-    parser.add_argument('-g', '--debug', dest='debug',
-                        action='store_true',
-                        help=argparse.SUPPRESS)
-    parser.add_argument("--no_incremental",  action='store_true',
-                        help="start item retrieval from start")
-    parser.add_argument("--fetch_cache",  action='store_true',
-                        help="Use cache for item retrieval")
-    parser.add_argument("--redis",  default="redis",
-                        help="url for the redis server (default: 'redis://localhost/8')")
-    parser.add_argument("--enrich",  action='store_true',
-                        help="Enrich items after retrieving")
-    parser.add_argument("--enrich_only",  action='store_true',
-                        help="Only enrich items")
-    parser.add_argument('--db-projects-map', help="Projects Mapping DB")
-    parser.add_argument('--db-sortinghat', help="SortingHat DB")
-    parser.add_argument('repositories', nargs='?', type=argparse.FileType('r'),
-                        default=sys.stdin,
-                        help="Path to JSON file with repositories")
-
-    if len(sys.argv) == 1:
-        parser.print_help()
-        sys.exit(1)
-
-    return parser
-
 
 
 def get_params_parser():
