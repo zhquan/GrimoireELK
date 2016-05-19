@@ -105,7 +105,7 @@ def get_params():
                         help="Use cache for item retrieval")
     parser.add_argument("--redis",  default="redis://redis/8",
                         help="url for the redis server (default: 'redis://redis/8')")
-    parser.add_argument('--index', help="Ocean index name")
+    parser.add_argument('--index', default="ocean", help="Ocean index name (default ocean)")
     parser.add_argument('--db-projects-map', help="Projects Mapping DB")
     parser.add_argument('--db-sortinghat', help="SortingHat DB")
 
