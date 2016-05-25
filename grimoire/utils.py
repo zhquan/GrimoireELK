@@ -129,16 +129,10 @@ def config_logging(debug):
 def get_params_parser():
     """Parse command line arguments"""
 
-    parser = argparse.ArgumentParser(usage=P2O_USAGE_MSG,
-                                     description=P2O_DESC_MSG,
-                                     epilog=P2O_EPILOG_MSG,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter,
-                                     add_help=False)
+    parser = argparse.ArgumentParser()
 
     ElasticOcean.add_params(parser)
 
-    parser.add_argument('-h', '--help', action='help',
-                       help=argparse.SUPPRESS)
     parser.add_argument('-g', '--debug', dest='debug',
                         action='store_true',
                         help=argparse.SUPPRESS)
@@ -150,7 +144,7 @@ def get_params_parser():
 
     parser.add_argument("--loop",  action='store_true',
                         help="loop the ocean update until process termination")
-    parser.add_argument("--redis",  default="redis",
+    parser.add_argument("--redis",  default="redis-arthur",
                         help="url for the redis server")
     parser.add_argument("--enrich",  action='store_true',
                         help="Enrich items after retrieving")
