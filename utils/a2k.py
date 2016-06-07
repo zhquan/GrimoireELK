@@ -149,7 +149,9 @@ def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None
     enrich_cls = get_connector_from_name(backend.lower())[2]
     enrich_backend = enrich_cls(None, db_projects, db_sortinghat)
 
-    es_index = origin+"_enrich"
+    # es_index = origin+"_enrich"
+    # Share the same enriched index for all items of a data source
+    es_index = elastic.index + "_" + backend.lower() + "_enrich"
     es_mapping = enrich_backend.get_elastic_mappings()
     elastic_enrich = ElasticSearch(elastic.url, es_index, es_mapping)
 
