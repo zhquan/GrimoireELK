@@ -39,6 +39,7 @@ from rq import push_connection
 
 from arthur.common import CH_PUBSUB
 
+from grimoire.arthur import enrich_items, enrich_sortinghat
 from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
 from grimoire.utils import config_logging, get_connector_from_name
 from grimoire.ocean.elastic import ElasticOcean
@@ -115,10 +116,6 @@ def get_params():
         sys.exit(1)
 
     args = parser.parse_args()
-
-    if not args.index:
-        raise RuntimeError("--index <ocean index> is needed")
-
     return args
 
 def connect_to_redis(redis_url):
@@ -143,16 +140,17 @@ def get_arthur_events(redis_url):
     return
 
 
-def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None):
+def enrich_origin(elastic, backend_name, origin, db_sortinghat=None, db_projects=None):
     """ In the elastic index all items must be of the same backend """
 
     # Prepare the enrich backend
-    enrich_cls = get_connector_from_name(backend.lower())[2]
+    enrich_cls = get_connector_from_name(backend_name.lower())[2]
+
     enrich_backend = enrich_cls(None, db_projects, db_sortinghat)
 
     # es_index = origin+"_enrich"
     # Share the same enriched index for all items of a data source
-    es_index = elastic.index + "_" + backend.lower() + "_enrich"
+    es_index = elastic.index + "_" + backend_name.lower() + "_enrich"
     es_mapping = enrich_backend.get_elastic_mappings()
     elastic_enrich = ElasticSearch(elastic.url, es_index, es_mapping)
 
@@ -168,25 +166,18 @@ def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None
     ocean = ElasticOcean(None, from_date=last_enrich, origin=origin)
     ocean.set_elastic(elastic)
 
-    total = 0
+    if db_sortinghat:
+        enrich_sortinghat(backend_name, ocean, enrich_backend)
 
-    items_pack = []
+    enrich_items(ocean, enrich_backend)
 
-    for item in ocean:
-        if len(items_pack) >= elastic.max_items_bulk:
-            enrich_backend.enrich_items(items_pack)
-            items_pack = []
-        items_pack.append(item)
-        total += 1
 
-    enrich_backend.enrich_items(items_pack)
-
-def check_task_finished(elastic_ocean):
+def check_task_finished(elastic_ocean, db_sortinghat, db_projects_map):
     try:
         task_finished = task_finish_queue.get_nowait()
         logging.info("Sleeping %i seconds to be sure all items are already indexed." % (WAIT_INDEX))
         sleep (WAIT_INDEX)
-        enrich_origin(elastic_ocean, task_finished.backend, task_finished.origin)
+        enrich_origin(elastic_ocean, task_finished.backend, task_finished.origin, db_sortinghat, db_projects_map)
     except queue.Empty:
         pass
 
@@ -215,7 +206,7 @@ if __name__ == '__main__':
         while(True):
             sleep(TIME_TO_CHECK)
             # Check for finished tasks every second
-            check_task_finished(elastic_ocean)
+            check_task_finished(elastic_ocean, args.db_sortinghat, args.db_projects_map)
 
 
     except KeyboardInterrupt:
