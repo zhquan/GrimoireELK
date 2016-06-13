@@ -180,12 +180,59 @@ def get_items_from_uuid(uuid, enrich_backend, ocean_backend):
 
     return items
 
-def enrich_arthur(url, ocean_index, origin=None,
-                  db_projects_map=None, db_sortinghat=None,
-                  clean=False, no_incremental=False):
-    """Enrich Ocean index created with arthur"""
+def enrich_items(items, enrich_backend):
+    total = 0
 
-    pass
+    items_pack = []
+
+    for item in items:
+        # print("%s %s" % (item['url'], item['lastUpdated_date']))
+        if len(items_pack) >= enrich_backend.elastic.max_items_bulk:
+            logging.info("Adding %i (%i done) enriched items to %s" % \
+                         (enrich_backend.elastic.max_items_bulk, total,
+                          enrich_backend.elastic.index_url))
+            enrich_backend.enrich_items(items_pack)
+            items_pack = []
+        items_pack.append(item)
+        total += 1
+    enrich_backend.enrich_items(items_pack)
+
+    return total
+
+
+def enrich_sortinghat(backend_name, ocean_backend, enrich_backend):
+    # First we add all new identities to SH
+    item_count = 0
+    new_identities = []
+
+    for item in ocean_backend:
+        item_count += 1
+        # Get identities from new items to be added to SortingHat
+        identities = enrich_backend.get_identities(item)
+        for identity in identities:
+            if identity not in new_identities:
+                new_identities.append(identity)
+        if item_count % 1000 == 0:
+            logging.debug("Processed %i items identities (%i identities)" \
+                           % (item_count, len(new_identities)))
+    logging.debug("TOTAL ITEMS: %i" % (item_count))
+
+    logging.info("Total new identities to be checked %i" % len(new_identities))
+
+    merged_identities = SortingHat.add_identities(enrich_backend.sh_db,
+                                                  new_identities, backend_name)
+
+    # Redo enrich for items with new merged identities
+    renrich_items = []
+    # For testing
+    # merged_identities = ['7e0bcf6ff46848403eaffa29ef46109f386fa24b']
+    for mid in merged_identities:
+        renrich_items += get_items_from_uuid(mid, enrich_backend, ocean_backend)
+
+    # Enrich items with merged identities
+    enrich_count_merged = enrich_items(renrich_items, enrich_backend)
+    return enrich_count_merged
+
 
 
 
@@ -194,59 +241,6 @@ def enrich_backend(url, clean, backend_name, backend_params, ocean_index=None,
                    db_projects_map=None, db_sortinghat=None,
                    no_incremental=False):
     """ Enrich Ocean index """
-
-    def enrich_items(items, enrich_backend):
-        total = 0
-
-        items_pack = []
-
-        for item in items:
-            # print("%s %s" % (item['url'], item['lastUpdated_date']))
-            if len(items_pack) >= enrich_backend.elastic.max_items_bulk:
-                logging.info("Adding %i (%i done) enriched items to %s" % \
-                             (enrich_backend.elastic.max_items_bulk, total,
-                              enrich_backend.elastic.index_url))
-                enrich_backend.enrich_items(items_pack)
-                items_pack = []
-            items_pack.append(item)
-            total += 1
-        enrich_backend.enrich_items(items_pack)
-
-        return total
-
-    def enrich_sortinghat(backend_name, ocean_backend, enrich_backend):
-        # First we add all new identities to SH
-        item_count = 0
-        new_identities = []
-
-        for item in ocean_backend:
-            item_count += 1
-            # Get identities from new items to be added to SortingHat
-            identities = enrich_backend.get_identities(item)
-            for identity in identities:
-                if identity not in new_identities:
-                    new_identities.append(identity)
-            if item_count % 1000 == 0:
-                logging.debug("Processed %i items identities (%i identities)" \
-                               % (item_count, len(new_identities)))
-        logging.debug("TOTAL ITEMS: %i" % (item_count))
-
-        logging.info("Total new identities to be checked %i" % len(new_identities))
-
-        merged_identities = SortingHat.add_identities(enrich_backend.sh_db,
-                                                      new_identities, backend_name)
-
-        # Redo enrich for items with new merged identities
-        renrich_items = []
-        # For testing
-        # merged_identities = ['7e0bcf6ff46848403eaffa29ef46109f386fa24b']
-        for mid in merged_identities:
-            renrich_items += get_items_from_uuid(mid, enrich_backend, ocean_backend)
-
-        # Enrich items with merged identities
-        enrich_count_merged = enrich_items(renrich_items, enrich_backend)
-        return enrich_count_merged
-
 
     backend = None
     enrich_index = None
