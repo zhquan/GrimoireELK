@@ -44,6 +44,7 @@ from grimoire.utils import config_logging, get_connector_from_name
 from grimoire.ocean.elastic import ElasticOcean
 
 TIME_TO_CHECK = 1  # seconds to wait for new arthur events
+WAIT_INDEX = 2  # seconds to wait to be sure all items are indexed
 task_finish_queue = queue.Queue() # shared queue between threads
 
 class TaskEvents(Thread):
@@ -183,6 +184,8 @@ def enrich_origin(elastic, backend, origin, db_sortinghat=None, db_projects=None
 def check_task_finished(elastic_ocean):
     try:
         task_finished = task_finish_queue.get_nowait()
+        logging.info("Sleeping %i seconds to be sure all items are already indexed." % (WAIT_INDEX))
+        sleep (WAIT_INDEX)
         enrich_origin(elastic_ocean, task_finished.backend, task_finished.origin)
     except queue.Empty:
         pass
