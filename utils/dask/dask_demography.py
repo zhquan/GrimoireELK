@@ -46,25 +46,24 @@ def enrich_demography_pandas(items, from_date=None):
     author_items = []  # items from author with new date fields added
 
     items = items[0:10]
-    print(json.dumps(items, indent=4, sort_keys=True))
+    # print(json.dumps(items, indent=4, sort_keys=True))
 
 
-    print(len(items))
-    b = db.from_sequence(items, npartitions=2)
+    b = db.from_sequence(items)
 
     df = b.to_dataframe()
 
-    print(df['Author'].head(100))
-    print(df['title'].head(100))
+    df1 = df.set_index('metadata__timestamp')
 
-    raise
+    # print(df1.compute())
 
     # Time to get MAX and MIN dates group by author
     # gb = df.groupby("Author").max()['author_date']
     gb = df.groupby("Author")['author_date'].max()
 
-    print(gb.head(1000))
-    print(gb.tail())
+    print(gb.compute())
+    # print(gb.head(1000))
+    # print(gb.tail())
     # print(gb.columns)
 
 
