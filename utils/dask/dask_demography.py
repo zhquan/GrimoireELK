@@ -86,6 +86,31 @@ def enrich_demography_pandas(items, from_date=None):
     return (author_items)
 
 @timeit
+def enrich_demography_dask(items, from_date=None):
+
+    logging.debug("Doing Dask demography enrich")
+    author_items = []  # items from author with new date fields added
+
+    df = pd.DataFrame(items)
+    dfd = dd.from_pandas(df, npartitions=1)
+    logging.debug("Dask LOADED items")
+    gb_min = dfd.groupby(["Author"]).author_date.min()
+    gb_max = dfd.groupby(["Author"]).author_date.max()
+    logging.debug("Dask GROUP BY completed")
+
+    # Time to update items with the min and max data
+    for item in items:
+        item.update(
+            {"author_min_date":gb_min.loc[item['Author']].compute()[0],
+             "author_max_date":gb_max.loc[item['Author']].compute()[0]}
+        )
+        author_items.append(item)
+    logging.debug("Dask UPDATED items")
+
+    return (author_items)
+
+
+@timeit
 def enrich_demography_es(es, es_index, items, from_date=None):
     logging.debug("Doing Elastic demography enrich from %s", es+"/"+es_index)
     ocean = None
@@ -220,7 +245,7 @@ def load_data(es, es_index):
 
         for item in ocean:
             items.append(item)
-            #if len(items) % 10 == 0: # debug
+            # if len(items) % 2000 == 0: # debug
             #    break
             if len(items) % 1000 == 0:
                 logging.debug("Items loaded: %i" % len(items))
@@ -283,11 +308,13 @@ if __name__ == '__main__':
         'load': (load_data, 'es_read', 'es_index_read'),
         'enrich_es': (enrich_demography_es, ES_IN, ES_IN_INDEX, 'load'),
         'enrich_pandas': (enrich_demography_pandas, 'load'),
+        'enrich_dask': (enrich_demography_dask, 'load'),
         'write_es_es': (write_data, 'es_es_index_write', 'enrich_es'),
         'write_es_pandas': (write_data, 'es_pandas_index_write', 'enrich_pandas'),
         'check': (check, 'enrich_es', 'enrich_pandas')
     }
 
 
+    # get(DASK_GRAPH, ['enrich_dask'])
     # get(DASK_GRAPH, ['check'])
     get(DASK_GRAPH, ['write_es_es','write_es_pandas'])
