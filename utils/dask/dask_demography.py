@@ -12,9 +12,15 @@ import sys
 
 import dask.dataframe as dd
 import dask.bag as db
+import numpy as np
+import pandas as pd
+
+
 import requests
 
 from dask.threaded import get
+
+from dateutil import parser
 
 from grimoire.utils import config_logging
 from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
@@ -39,38 +45,47 @@ def get_params():
     args = parser.parse_args()
     return args
 
+import time
 
+def timeit(method):
+
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+
+        print ('%r %2.2f sec' % \
+              (method.__name__, te-ts))
+        return result
+
+    return timed
+
+
+@timeit
 def enrich_demography_pandas(items, from_date=None):
 
     logging.debug("Doing Pandas demography enrich")
     author_items = []  # items from author with new date fields added
 
-    items = items[0:10]
-    # print(json.dumps(items, indent=4, sort_keys=True))
+    df = pd.DataFrame(items)
+    df.info()
+    logging.debug("Pandas LOADED items")
+    gb = df.groupby("Author").agg({'author_date' : [np.min, np.max]})
+    logging.debug("Pandas GROUP BY completed")
 
 
-    b = db.from_sequence(items)
-
-    df = b.to_dataframe()
-
-    df1 = df.set_index('metadata__timestamp')
-
-    # print(df1.compute())
-
-    # Time to get MAX and MIN dates group by author
-    # gb = df.groupby("Author").max()['author_date']
-    gb = df.groupby("Author")['author_date'].max()
-
-    print(gb.compute())
-    # print(gb.head(1000))
-    # print(gb.tail())
-    # print(gb.columns)
-
-
+    # Time to update items with the min and max data
+    for item in items:
+        item.update(
+            {"author_min_date":gb.loc[item['Author']]['author_date']['amin'],
+             "author_max_date":gb.loc[item['Author']]['author_date']['amax']}
+        )
+        author_items.append(item)
+    logging.debug("Pandas UPDATED items")
 
     return (author_items)
 
-
+@timeit
 def enrich_demography_es(es, es_index, items, from_date=None):
     logging.debug("Doing Elastic demography enrich from %s", es+"/"+es_index)
     ocean = None
@@ -121,12 +136,12 @@ def enrich_demography_es(es, es_index, items, from_date=None):
           "aggs": {
             "min": {
               "min": {
-                "field": "utc_commit"
+                "field": "author_date"
               }
             },
             "max": {
               "max": {
-                "field": "utc_commit"
+                "field": "author_date"
               }
             }
           }
@@ -136,6 +151,8 @@ def enrich_demography_es(es, es_index, items, from_date=None):
     """ % (query)
 
     r = requests.post(ocean.elastic.index_url+"/_search", data=es_query)
+    logging.debug("ES GROUP BY completed")
+
     authors = r.json()['aggregations']['author']['buckets']
 
     author_items = []  # items from author with new date fields added
@@ -181,9 +198,11 @@ def enrich_demography_es(es, es_index, items, from_date=None):
 
         nauthors_done += 1
         if nauthors_done % 10 == 0:
-            logging.info("Authors processed %i/%i", nauthors_done, len(authors))
+            logging.debug("Authors processed %i/%i", nauthors_done, len(authors))
 
-    logging.info("Authors processed %i/%i", nauthors_done, len(authors))
+    logging.debug("ES UPDATED items")
+
+    logging.debug("Authors processed %i/%i", nauthors_done, len(authors))
     logging.debug("Completed demography enrich from %s", ocean.elastic.index_url)
 
     return (author_items)
@@ -201,11 +220,13 @@ def load_data(es, es_index):
 
         for item in ocean:
             items.append(item)
-            if len(items) % 10 == 0: # debug
-                break
+            #if len(items) % 10 == 0: # debug
+            #    break
             if len(items) % 1000 == 0:
                 logging.debug("Items loaded: %i" % len(items))
         logging.debug("Items loaded: %i" % len(items))
+
+        logging.info("Size of items: %i", sys.getsizeof(items))
         return items
 
     except ElasticConnectException:
@@ -213,20 +234,37 @@ def load_data(es, es_index):
         sys.exit(1)
 
 
-def enrich_demography(data):
-    """ Add demography data  """
-    logging.info("Enriching data with demography info for %i ", len(data))
-
-    # logging.info("Data to enrich: %i", data)
-
-    # Enrich demography using ES
-
-    # Enrich demography using Pandas
-
-
 def write_data(es_index, data):
     """ Write the data to ES """
     logging.info("Writing %i items data with demography info to %s", len(data), es_index)
+
+@timeit
+def check(data_es, data_pandas):
+    logging.info("Checking data from ES and Pandas are the same")
+
+    if len(data_es) != len(data_pandas):
+        logging.error("Data from ES and pandas are different in size: %i %i", len(data_es), len(data_pandas))
+        return False
+    else:
+        logging.info("Data from ES and pandas are of the same size")
+
+        for item_es in data_es:
+            for item_pandas in data_pandas:
+                if item_es['hash'] == item_pandas['hash']:
+                    es_min = parser.parse(item_es['author_min_date']).replace(tzinfo=None)
+                    es_max = parser.parse(item_es['author_max_date']).replace(tzinfo=None)
+                    pandas_min = parser.parse(item_pandas['author_min_date'])
+                    pandas_max = parser.parse(item_pandas['author_max_date'])
+                    if es_min == pandas_min and es_max == pandas_max:
+                        break
+                    else:
+                        print(item_es['hash'],item_es['Author'],item_es['author_min_date'],item_es['author_max_date'])
+                        print(item_pandas['hash'],item_pandas['Author'],item_pandas['author_min_date'],item_pandas['author_max_date'])
+                        logging.info("ITEM KO")
+                        return False
+    logging.info("ES and Pandas data are the same")
+    return True
+
 
 
 if __name__ == '__main__':
@@ -246,9 +284,10 @@ if __name__ == '__main__':
         'enrich_es': (enrich_demography_es, ES_IN, ES_IN_INDEX, 'load'),
         'enrich_pandas': (enrich_demography_pandas, 'load'),
         'write_es_es': (write_data, 'es_es_index_write', 'enrich_es'),
-        'write_es_pandas': (write_data, 'es_pandas_index_write', 'enrich_pandas')
+        'write_es_pandas': (write_data, 'es_pandas_index_write', 'enrich_pandas'),
+        'check': (check, 'enrich_es', 'enrich_pandas')
     }
 
 
-    get(DASK_GRAPH, ['write_es_pandas'])
-    # get(DASK_GRAPH, ['write_es_es','write_es_pandas'])
+    # get(DASK_GRAPH, ['check'])
+    get(DASK_GRAPH, ['write_es_es','write_es_pandas'])
