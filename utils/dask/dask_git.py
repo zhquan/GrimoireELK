@@ -136,7 +136,7 @@ def load_data(es, es_index):
 
         for item in ocean:
             items.append(item)
-            if len(items) % 100 == 0: # debug
+            if len(items) % 3 == 0: # debug
                 break
             if len(items) % 1000 == 0:
                 logging.debug("Items loaded: %i", len(items))
@@ -149,6 +149,20 @@ def load_data(es, es_index):
         logging.error("Can't connect to Elastic Search. Is it running?")
         sys.exit(1)
 
+@timeit
+def lowercase_fields(items):
+    new_items = []
+    while items:
+        item = items.pop()
+        for key in item.keys():
+            item[key.lower()] = item.pop(key)
+            # TODO: do the same inside the data dict
+        new_items.append(item)
+    print(new_items)
+    return new_items
+
+def utc_dates(items):
+    return items
 
 def write_data(es_index, eitems):
     """ Write the data to ES """
@@ -175,7 +189,9 @@ if __name__ == '__main__':
         'es_es_index_write': ES_OUT,
         'es_pandas_index_write': ES_OUT+"_pandas",
         'load': (load_data, 'es_read', 'es_index_read'),
-        'sortinghat': (identities2sh, 'load', SORTINGHAT_DB),
+        'lowercase_fields' : (lowercase_fields, 'load'),
+        'utc_dates' : (utc_dates, 'lowercase_fields'),
+        'sortinghat': (identities2sh, 'utc_dates', SORTINGHAT_DB),
         'enrich_es': (enrich_git, 'sortinghat', PROJECTS_DB, SORTINGHAT_DB),
         'enrich_pandas': (enrich_git_pandas, 'sortinghat'),
         'write_es_es': (write_data, 'es_es_index_write', 'enrich_es'),
