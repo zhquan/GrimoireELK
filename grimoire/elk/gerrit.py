@@ -34,8 +34,8 @@ from grimoire.elk.enrich import Enrich
 
 class GerritEnrich(Enrich):
 
-    def __init__(self, gerrit, sortinghat=True, db_projects_map = None):
-        super().__init__(sortinghat, db_projects_map)
+    def __init__(self, gerrit, db_projects_map=None, db_sortinghat=None):
+        super().__init__(db_projects_map, db_sortinghat)
         self.elastic = None
         self.gerrit = gerrit
         self.type_name = "items"  # type inside the index to store items enriched

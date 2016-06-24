@@ -35,8 +35,8 @@ from .utils import get_time_diff_days
 
 class JiraEnrich(Enrich):
 
-    def __init__(self, jira, sortinghat=True, db_projects_map = None):
-        super().__init__(sortinghat, db_projects_map)
+    def __init__(self, jira, db_projects_map=None, db_sortinghat=None):
+        super().__init__(db_projects_map, db_sortinghat)
         self.perceval_backend = jira
         self.elastic = None
 

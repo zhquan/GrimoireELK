@@ -31,8 +31,8 @@ from grimoire.elk.enrich import Enrich
 
 class StackExchangeEnrich(Enrich):
 
-    def __init__(self, stackexchange, sortinghat=True, db_projects_map = None):
-        super().__init__(sortinghat, db_projects_map)
+    def __init__(self, stackexchange, db_projects_map=None, db_sortinghat=None):
+        super().__init__(db_projects_map, db_sortinghat)
         self.elastic = None
         self.perceval_backend = stackexchange
         self.index_stackexchange = "stackexchange"
