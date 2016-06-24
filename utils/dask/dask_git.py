@@ -16,6 +16,8 @@ import pandas as pd
 
 import requests
 
+from copy import deepcopy
+
 from dask.threaded import get
 
 from dateutil import parser
@@ -152,16 +154,41 @@ def load_data(es, es_index):
 @timeit
 def lowercase_fields(items):
     new_items = []
-    while items:
-        item = items.pop()
+    for item in items:
+        new_item = deepcopy(item)
         for key in item.keys():
-            item[key.lower()] = item.pop(key)
-            # TODO: do the same inside the data dict
-        new_items.append(item)
-    print(new_items)
+            new_item[key.lower()] = new_item.pop(key)
+            for dkey in item['data'].keys():
+                if dkey.lower() in ['commit', 'author', 'authordate', 'commitdate']:
+                    # We have Commit and commit in raw index!
+                    # Author and AuthorDate and CommitDate are used in SH
+                    continue
+                new_item['data'][dkey.lower()] = new_item['data'].pop(dkey)
+        new_items.append(new_item)
     return new_items
 
 def utc_dates(items):
+    # First step, detect all date fields in data
+    dates_fields = []
+    for dkey in items[0]['data']:
+        try:
+            parser.parse(items[0]['data'][dkey])
+            dates_fields.append(dkey)
+        except Exception:
+            pass
+
+    # Update all items converting the dates to UTC + tz
+    new_items = []
+    for item in items:
+        new_item = deepcopy(item)
+        for dkey in item['data'].keys():
+            if dkey in dates_fields:
+                # date in utc
+                new_item['data'][dkey+"_utc"] = new_item['data'][dkey]
+                # timezone in seconds
+                new_item['data'][dkey+"_tz"] = 0
+        new_items.append(new_item)
+
     return items
 
 def write_data(es_index, eitems):
