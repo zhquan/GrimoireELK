@@ -10,16 +10,14 @@ import json
 import logging
 import sys
 
-import numpy as np
+import dask.bag as db
 import pandas as pd
-
 import requests
 
 from copy import deepcopy
 
 from dask.threaded import get
-
-from dateutil import parser
+from dask.diagnostics import ProgressBar
 
 from grimoire.utils import config_logging
 from grimoire.elk.elastic import ElasticSearch, ElasticConnectException
@@ -139,7 +137,7 @@ def load_data(es, es_index):
 
         for item in ocean:
             items.append(item)
-            # if len(items) % 10 == 0: # debug
+            # if len(items) % 100 == 0: # debug
             #   break
             if len(items) % 1000 == 0:
                 logging.debug("Items loaded: %i", len(items))
@@ -151,6 +149,59 @@ def load_data(es, es_index):
     except ElasticConnectException:
         logging.error("Can't connect to Elastic Search. Is it running?")
         sys.exit(1)
+
+@timeit
+def load_data_bag(items):
+    """ Build the dask bag with the items """
+
+    # npartitions=100 by default
+    return db.from_sequence(items)
+
+@timeit
+def process_data_bag(items_bg):
+    """ Build the dask bag with the items """
+
+    def get_logins(x):
+        """The key for foldby, like a groupby key. Get the Author from a Commit"""
+        return x['data']['Author']
+
+    def binop_max(max_date, x):
+        """Get the max AuthorDate"""
+        x_date = str_to_datetime(x['data']['AuthorDate'])
+        if x_date > max_date:
+            max_date = x_date
+        return max_date
+
+    def combine_max(date1, date2):
+        """This combines dates from commits"""
+        max_date = date1
+        if date2 > date1:
+            max_date = date2
+        return max_date
+
+    def binop_min(min_date, x):
+        """Get the max AuthorDate"""
+        x_date = str_to_datetime(x['data']['AuthorDate'])
+        if not min_date or x_date < min_date:
+            min_date = x_date
+        return min_date
+
+    def combine_min(date1, date2):
+        """This combines dates from commits"""
+        min_date = date1
+        if date2 < date1:
+            min_date = date2
+        return min_date
+
+
+    dates_max = items_bg.foldby(get_logins, binop_max, str_to_datetime('1970-01-01'), combine=combine_max)
+    dates_min = items_bg.foldby(get_logins, binop_min, None, combine=combine_min)
+
+    with ProgressBar():
+        dates_max.compute()
+    with ProgressBar():
+        dates_min.compute()
+
 
 @timeit
 def lowercase_fields(items):
@@ -244,6 +295,8 @@ if __name__ == '__main__':
         'es_es_index_write': ES_OUT_INDEX,
         'es_pandas_index_write': ES_OUT+"_pandas",
         'load': (load_data, 'es_read', 'es_index_read'),
+        'load_bag': (load_data_bag, 'load'),
+        'process_data_bag': (process_data_bag, 'load_bag'),
         'lowercase_fields' : (lowercase_fields, 'load'),
         'utc_dates' : (utc_dates, 'lowercase_fields'),
         'sortinghat': (identities2sh, 'utc_dates', SORTINGHAT_DB),
@@ -254,4 +307,5 @@ if __name__ == '__main__':
     }
 
     # get(DASK_GRAPH, ['write_es_es','write_es_pandas'])
-    get(DASK_GRAPH, ['write_es_es'])
+    # get(DASK_GRAPH, ['write_es_es'])
+    get(DASK_GRAPH, ['process_data_bag'])
