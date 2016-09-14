@@ -23,12 +23,14 @@
 #   Alvaro del Castillo San Felix <acs@bitergia.com>
 #
 
-from time import time
-from dateutil import parser
 import json
 import logging
-import requests
+
+from datetime import datetime
+from time import time
 from urllib.parse import urlparse
+
+from dateutil import parser
 
 from .enrich import Enrich
 
@@ -36,8 +38,8 @@ from .utils import get_time_diff_days
 
 class BugzillaEnrich(Enrich):
 
-    def __init__(self, bugzilla, sortinghat=True, db_projects_map = None):
-        super().__init__(sortinghat, db_projects_map)
+    def __init__(self, bugzilla, db_sortinghat=None, db_projects_map = None):
+        super().__init__(db_sortinghat, db_projects_map)
         self.perceval_backend = bugzilla
         self.elastic = None
 
@@ -93,29 +95,22 @@ class BugzillaEnrich(Enrich):
             identity = BugzillaEnrich.get_sh_identity({'assigned_to':item["data"]['assigned_to']})
             eitem['assigned_to_uuid'] = self.get_uuid(identity, self.get_connector_name())
             eitem['assigned_to_name'] = identity['name']
-            enrollments = self.get_enrollments(eitem['assigned_to_uuid'])
-            if len(enrollments) > 0:
-                eitem["assigned_to_org_name"] = enrollments[0].organization.name
-            else:
-                eitem["assigned_to_org_name"] = None
-
+            item_date = item['data'][self.get_field_date()][0]['__text__']
+            item_date_dt = parser.parse(item_date)
+            item_date_utc = (item_date_dt-item_date_dt.utcoffset()).replace(tzinfo=None)
+            eitem["assigned_to_org_name"] = self.get_enrollment(eitem['assigned_to_uuid'], item_date_utc)
+            eitem["assigned_to_domain"] = self.get_domain(identity)
+            eitem["assigned_to_bot"] = self.is_bot(eitem['assigned_to_uuid'])
         if 'reporter' in item['data']:
             identity = BugzillaEnrich.get_sh_identity({'reporter':item["data"]['reporter']})
             eitem['reporter_uuid'] = self.get_uuid(identity, self.get_connector_name())
             eitem['reporter_name'] = identity['name']
-            enrollments = self.get_enrollments(eitem['reporter_uuid'])
-            if len(enrollments) > 0:
-                eitem["reporter_org_name"] = enrollments[0].organization.name
-            else:
-                eitem["reporter_org_name"] = None
-            if identity['email']:
-                try:
-                    eitem["reporter_domain"] = identity['email'].split("@")[1]
-                except IndexError:
-                    # logging.warning("Bad email format: %s" % (identity['email']))
-                    eitem["reporter_domain"] = None
-            else:
-                eitem["reporter_domain"] = None
+            item_date = item['data'][self.get_field_date()][0]['__text__']
+            item_date_dt = parser.parse(item_date)
+            item_date_utc = (item_date_dt-item_date_dt.utcoffset()).replace(tzinfo=None)
+            eitem["reporter_org_name"] = self.get_enrollment(eitem['reporter_uuid'], item_date_utc)
+            eitem["reporter_domain"] = self.get_domain(identity)
+            eitem["reporter_bot"] = self.is_bot(eitem['reporter_uuid'])
 
         # Unify fields name
         eitem["author_uuid"] = eitem["reporter_uuid"]
@@ -162,13 +157,8 @@ class BugzillaEnrich(Enrich):
         return identities
 
     def enrich_issue(self, item):
-
-        def get_bugzilla_url(item):
-            u = urlparse(item['origin'])
-            return u.scheme+"//"+u.netloc
-
         if 'bug_id' not in item['data']:
-            logging.warning("Dropped bug without bug_id %s" % (issue))
+            logging.warning("Dropped bug without bug_id %s", issue)
             return None
 
         eitem = {}
@@ -184,48 +174,77 @@ class BugzillaEnrich(Enrich):
         # The real data
         issue = item['data']
 
+        # dizquierdo specification
+
+        eitem['changes'] = len(item['data']['activity'])
+
+        eitem['labels'] = item['data']['keywords']
+        eitem['priority'] = item['data']['priority'][0]['__text__']
+        eitem['severity'] = item['data']['bug_severity'][0]['__text__']
+        eitem['op_sys'] = item['data']['op_sys'][0]['__text__']
+        eitem['product'] = item['data']['product'][0]['__text__']
+        eitem['project_name'] = item['data']['product'][0]['__text__']
+        eitem['component'] = item['data']['component'][0]['__text__']
+        eitem['platform'] = item['data']['rep_platform'][0]['__text__']
+        if '__text__' in item['data']['resolution'][0]:
+            eitem['resolution'] = item['data']['resolution'][0]['__text__']
+        if 'watchers' in item['data']:
+            eitem['watchers'] = item['data']['watchers'][0]['__text__']
+        eitem['votes'] = item['data']['votes'][0]['__text__']
+
         if "assigned_to" in issue:
             if "name" in issue["assigned_to"][0]:
-                eitem["assigned_to"] = issue["assigned_to"][0]["name"]
+                eitem["assigned"] = issue["assigned_to"][0]["name"]
+            if "__text__" in issue["assigned_to"][0]:
+                eitem["assignee_email"] = issue["assigned_to"][0]["__text__"]
+
 
         if "reporter" in issue:
             if "name" in issue["reporter"][0]:
-                eitem["reporter"] = issue["reporter"][0]["name"]
+                eitem["reporter_name"] = issue["reporter"][0]["name"]
+                eitem["author_name"] = issue["reporter"][0]["name"]
+            if "__text__" in issue["reporter"][0]:
+                eitem["reporter_email"] = issue["reporter"][0]["__text__"]
+                eitem["author_email"] = issue["reporter"][0]["__text__"]
+
+        date_ts = parser.parse(issue['creation_ts'][0]['__text__'])
+        eitem['creation_date'] = date_ts.strftime('%Y-%m-%dT%H:%M:%S')
+
 
         eitem["bug_id"] = issue['bug_id'][0]['__text__']
         eitem["status"]  = issue['bug_status'][0]['__text__']
         if "short_desc" in issue:
             if "__text__" in issue["short_desc"][0]:
-                eitem["summary"]  = issue['short_desc'][0]['__text__']
+                eitem["main_description"]  = issue['short_desc'][0]['__text__']
+        if "summary" in issue:
+            if "__text__" in issue["summary"][0]:
+                eitem["summary"]  = issue['summary'][0]['__text__']
 
-        # Component and product
-        eitem["component"] = issue['component'][0]['__text__']
-        eitem["product"]  = issue['product'][0]['__text__']
 
         # Fix dates
-        date_ts = parser.parse(issue['creation_ts'][0]['__text__'])
-        eitem['creation_ts'] = date_ts.strftime('%Y-%m-%dT%H:%M:%S')
         date_ts = parser.parse(issue['delta_ts'][0]['__text__'])
         eitem['changeddate_date'] = date_ts.isoformat()
         eitem['delta_ts'] = date_ts.strftime('%Y-%m-%dT%H:%M:%S')
 
         # Add extra JSON fields used in Kibana (enriched fields)
-        eitem['number_of_comments'] = 0
-        eitem['time_to_last_update_days'] = None
+        eitem['comments'] = 0
         eitem['url'] = None
 
         if 'long_desc' in issue:
-            eitem['number_of_comments'] = len(issue['long_desc'])
-        eitem['url'] = get_bugzilla_url(item) + "show_bug.cgi?id=" + \
-                        issue['bug_id'][0]['__text__']
-        eitem['time_to_last_update_days'] = \
-            get_time_diff_days(eitem['creation_ts'], eitem['delta_ts'])
+            eitem['comments'] = len(issue['long_desc'])
+        eitem['url'] = item['origin'] + "/show_bug.cgi?id=" + issue['bug_id'][0]['__text__']
+        eitem['resolution_days'] = \
+            get_time_diff_days(eitem['creation_date'], eitem['delta_ts'])
+        eitem['timeopen_days'] = \
+            get_time_diff_days(eitem['creation_date'], datetime.utcnow())
 
         if self.sortinghat:
             eitem.update(self.get_item_sh(item))
 
         if self.prjs_map:
             eitem.update(self.get_item_project(item))
+
+        eitem.update(self.get_grimoire_fields(eitem['creation_date'],"bug"))
 
         return eitem
 
@@ -254,7 +273,7 @@ class BugzillaEnrich(Enrich):
         for issue in items:
             if current >= max_items:
                 task_init = time()
-                requests.put(url, data=bulk_json)
+                self.requests.put(url, data=bulk_json)
                 bulk_json = ""
                 total += current
                 current = 0
@@ -266,14 +285,14 @@ class BugzillaEnrich(Enrich):
             current += 1
         task_init = time()
         total += current
-        requests.put(url, data=bulk_json)
+        self.requests.put(url, data=bulk_json)
         logging.debug("bulk packet sent (%.2f sec, %i total)"
                       % (time()-task_init, total))
 
 
     def issues_to_es(self, items):
 
-        elastic_type = "issues"
+        elastic_type = "items"
 
         max_items = self.elastic.max_items_bulk
         current = 0
@@ -285,7 +304,7 @@ class BugzillaEnrich(Enrich):
 
         for issue in items:
             if current >= max_items:
-                requests.put(url, data=bulk_json)
+                self.requests.put(url, data=bulk_json)
                 bulk_json = ""
                 current = 0
             eitem = self.enrich_issue(issue)
@@ -295,47 +314,6 @@ class BugzillaEnrich(Enrich):
             bulk_json += '{"index" : {"_id" : "%s" } }\n' % (eitem[self.get_field_unique_id()])
             bulk_json += data_json +"\n"  # Bulk document
             current += 1
-        requests.put(url, data=bulk_json)
+        self.requests.put(url, data=bulk_json)
 
         logging.debug("Adding issues to ES Done")
-
-
-    def get_elastic_mappings(self):
-        ''' Specific mappings needed for ES '''
-
-        mapping = '''
-        {
-            "properties": {
-               "product": {
-                  "type": "string",
-                  "index":"not_analyzed"
-               },
-               "component": {
-                  "type": "string",
-                  "index":"not_analyzed"
-               },
-               "assigned_to": {
-                  "type": "string",
-                  "index":"not_analyzed"
-               },
-               "author_org_name": {
-                 "type": "string",
-                 "index":"not_analyzed"
-               },
-               "author_domain": {
-                 "type": "string",
-                 "index":"not_analyzed"
-               },
-               "author_name": {
-                 "type": "string",
-                 "index":"not_analyzed"
-               },
-               "origin": {
-                 "type": "string",
-                 "index":"not_analyzed"
-               }
-            }
-        }
-        '''
-
-        return {"items":mapping}

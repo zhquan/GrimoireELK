@@ -26,10 +26,13 @@
 """Ocean feeder for Elastic from  Perseval data"""
 
 
-from datetime import datetime
+import inspect
 import json
 import logging
 import requests
+
+from datetime import datetime
+
 
 class ElasticOcean(object):
 
@@ -42,10 +45,11 @@ class ElasticOcean(object):
         parser.add_argument("-e", "--elastic_url",  default="http://127.0.0.1:9200",
                             help="Host with elastic search" +
                             "(default: http://127.0.0.1:9200)")
-
+        parser.add_argument("--elastic_url-enrich",
+                            help="Host with elastic search and enriched indexes")
 
     def __init__(self, perceval_backend, from_date=None, fetch_cache=False,
-                 project=None, origin=None):
+                 project=None, insecure=True):
 
         self.perceval_backend = perceval_backend
         self.origin = None
@@ -58,6 +62,12 @@ class ElasticOcean(object):
         self.from_date = from_date  # fetch from_date
         self.fetch_cache = fetch_cache  # fetch from cache
         self.project = project  # project to be used for this data source
+
+        self.requests = requests.Session()
+        if insecure:
+            requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+            self.requests.verify = False
+
 
     def set_elastic(self, elastic):
         """ Elastic used to store last data source state """
@@ -106,7 +116,7 @@ class ElasticOcean(object):
         item['metadata__timestamp'] = timestamp.isoformat()
         return item
 
-    def feed(self, from_date=None):
+    def feed(self, from_date=None, offset=None):
         """ Feed data in Elastic from Perceval """
 
         # Always filter by origin to support multi origin indexes
@@ -119,7 +129,14 @@ class ElasticOcean(object):
             # Forced from backend command line.
             last_update = from_date
 
-        logging.info("Incremental from: %s" % (last_update))
+        logging.info("Incremental from: %s", last_update)
+
+        # Check if backend supports from_date
+        signature = inspect.signature(self.perceval_backend.fetch)
+
+        if 'from_date' not in signature.parameters:
+            last_update = None
+            logging.debug("Fetch method does not use 'from_date' parameter")
 
         task_init = datetime.now()
 
@@ -128,13 +145,17 @@ class ElasticOcean(object):
         if self.fetch_cache:
             items = self.perceval_backend.fetch_from_cache()
         else:
-            if last_update:
+            if last_update and not offset:
+                # if offset used for incremental do not use date
                 # Perceval backend from_date must not include timezone
                 # It always uses the server datetime
                 last_update = last_update.replace(tzinfo=None)
                 items = self.perceval_backend.fetch(from_date=last_update)
             else:
-                items = self.perceval_backend.fetch()
+                if offset:
+                    items = self.perceval_backend.fetch(offset=offset)
+                else:
+                    items = self.perceval_backend.fetch()
         for item in items:
             # print("%s %s" % (item['url'], item['lastUpdated_date']))
             # Add date field for incremental analysis if needed
@@ -192,11 +213,11 @@ class ElasticOcean(object):
                 "scroll" : max_process_items_pack_time,
                 "scroll_id" : self.elastic_scroll_id
                 }
-            r = requests.post(url, data=json.dumps(scroll_data))
+            r = self.requests.post(url, data=json.dumps(scroll_data))
         else:
             filters = "{}"
             # If origin Always filter by origin to support multi origin indexes
-            if self.origin:
+            if self.perceval_backend and self.perceval_backend.origin:
                 filters = '''
                     {"term":
                         { "origin" : "%s"  }
@@ -213,19 +234,25 @@ class ElasticOcean(object):
                     }
                 ''' % (date_field, from_date)
 
+            order_field = 'metadata__updated_on'
+            order_query = ''
+            if self.perceval_backend:
+                # logstash backends does not have the order_field
+                order_query = ', "sort": { "%s": { "order": "asc" }} ' % order_field
+
             query = """
             {
                 "query": {
                     "bool": {
                         "must": [%s]
                     }
-                }
+                } %s
             }
-            """ % (filters)
+            """ % (filters, order_query)
 
-            # logging.debug("%s %s" % (url, query))
+            # logging.debug("%s %s", url, query)
 
-            r = requests.post(url, data=query)
+            r = self.requests.post(url, data=query)
 
         items = []
         try:

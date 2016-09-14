@@ -24,7 +24,6 @@
 
 import json
 import logging
-import requests
 
 from dateutil import parser
 import email.utils
@@ -35,8 +34,8 @@ from sortinghat import api
 
 class MBoxEnrich(Enrich):
 
-    def __init__(self, mbox, sortinghat=True, db_projects_map = None):
-        super().__init__(sortinghat, db_projects_map)
+    def __init__(self, mbox, db_sortinghat=None, db_projects_map = None):
+        super().__init__(db_sortinghat, db_projects_map)
         self.elastic = None
         self.perceval_backend = mbox
         self.index_mbox = "mbox"
@@ -88,48 +87,10 @@ class MBoxEnrich(Enrich):
         identity['username'] = None  # email does not have username
         identity['email'] = from_[1]
         identity['name'] = from_[0]
+        if not identity['name']:
+            identity['name'] = identity['email'].split('@')[0]
         return identity
 
-    def get_item_sh(self, item):
-        """ Add sorting hat enrichment fields """
-        eitem = {}  # Item enriched
-
-        item = item['data']
-
-        # Enrich SH
-        if "From" not in item:
-            return eitem
-        identity  = self.get_sh_identity(item["From"])
-        eitem["from_uuid"] = self.get_uuid(identity, self.get_connector_name())
-        eitem["from_name"] = identity['name']
-        # bot
-        u = api.unique_identities(self.sh_db, eitem["from_uuid"])[0]
-        if u.profile:
-            eitem["from_bot"] = u.profile.is_bot
-        else:
-            eitem["from_bot"] = False  # By default, identities are not bots
-
-        enrollments = self.get_enrollments(eitem["from_uuid"])
-        if len(enrollments) > 0:
-            eitem["from_org_name"] = enrollments[0].organization.name
-        else:
-            eitem["from_org_name"] = None
-
-        if identity['email']:
-            try:
-                eitem["domain"] = identity['email'].split("@")[1]
-            except IndexError:
-                logging.warning("Bad email format: %s" % (identity['email']))
-                eitem["domain"] = None
-        else:
-            eitem["domain"] = None
-
-        # Unify fields name
-        eitem["author_uuid"] = eitem["from_uuid"]
-        eitem["author_name"] = eitem["from_name"]
-        eitem["author_org_name"] = eitem["from_org_name"]
-        eitem["author_domain"] = eitem["domain"]
-        return eitem
 
     def get_item_project(self, item):
         """ Get project mapping enrichment field """
@@ -137,6 +98,7 @@ class MBoxEnrich(Enrich):
         # /mnt/mailman_archives/dltk-dev.mbox/dltk-dev.mbox
         ds_name = "mls"  # data source name in projects map
         mls_list = item['origin']
+        # Eclipse specific yet
         path = "/mnt/mailman_archives/"
         path += mls_list+".mbox/"+mls_list+".mbox"
 
@@ -171,7 +133,10 @@ class MBoxEnrich(Enrich):
         map_fields = {"Subject": "Subject_analyzed"
                       }
         for fn in map_fields:
-            eitem[map_fields[fn]] = message[fn]
+            if fn in message:
+                eitem[map_fields[fn]] = message[fn]
+            else:
+                eitem[map_fields[fn]] = None
 
         # Enrich dates
         eitem["email_date"] = parser.parse(item["metadata__updated_on"]).isoformat()
@@ -197,10 +162,12 @@ class MBoxEnrich(Enrich):
             eitem["tz"]  = None
 
         if self.sortinghat:
-            eitem.update(self.get_item_sh(item))
+            eitem.update(self.get_item_sh(item,"From"))
 
         if self.prjs_map:
             eitem.update(self.get_item_project(item))
+
+        eitem.update(self.get_grimoire_fields(message['Date'], "message"))
 
         return eitem
 
@@ -215,7 +182,7 @@ class MBoxEnrich(Enrich):
 
         for item in items:
             if current >= max_items:
-                requests.put(url, data=bulk_json)
+                self.requests.put(url, data=bulk_json)
                 bulk_json = ""
                 current = 0
 
@@ -226,9 +193,9 @@ class MBoxEnrich(Enrich):
             bulk_json += data_json +"\n"  # Bulk document
             current += 1
         try:
-            requests.put(url, data = bulk_json)
+            self.requests.put(url, data = bulk_json)
         except UnicodeEncodeError:
             # Related to body.encode('iso-8859-1'). mbox data
             logging.error("Encoding error ... converting bulk to iso-8859-1")
             bulk_json = bulk_json.encode('iso-8859-1','ignore')
-            requests.put(url, data=bulk_json)
+            self.requests.put(url, data=bulk_json)

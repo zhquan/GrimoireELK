@@ -60,8 +60,8 @@ class SortingHat(object):
                 uuid = api.add_identity(db, backend, identity['email'],
                                         identity['name'], identity['username'])
 
-                logger.info("New sortinghat identity %s %s %s (%i/%i)" % \
-                            (uuid, identity['name'], identity['email'],
+                logger.debug("New sortinghat identity %s %s,%s,%s (%i/%i)" % \
+                            (uuid, identity['username'], identity['name'], identity['email'],
                             total, lidentities))
 
                 total += 1
@@ -94,6 +94,11 @@ class SortingHat(object):
                 continue
             except UnicodeEncodeError as ex:
                 logging.warning("UnicodeEncodeError. Ignoring it. %s %s %s" % \
+                                (identity['email'], identity['name'],
+                                identity['username']))
+                continue
+            except Exception as ex:
+                logging.warning("Unknown exception adding identity. Ignoring it. %s %s %s" % \
                                 (identity['email'], identity['name'],
                                 identity['username']))
                 continue

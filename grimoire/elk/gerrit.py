@@ -27,7 +27,6 @@ from datetime import datetime
 from dateutil import parser
 import json
 import logging
-import requests
 import time
 
 
@@ -35,8 +34,8 @@ from grimoire.elk.enrich import Enrich
 
 class GerritEnrich(Enrich):
 
-    def __init__(self, gerrit, sortinghat=True, db_projects_map = None):
-        super().__init__(sortinghat, db_projects_map)
+    def __init__(self, gerrit, db_sortinghat=None, db_projects_map = None):
+        super().__init__(db_sortinghat, db_projects_map)
         self.elastic = None
         self.gerrit = gerrit
         self.type_name = "items"  # type inside the index to store items enriched
@@ -47,8 +46,10 @@ class GerritEnrich(Enrich):
     def get_fields_uuid(self):
         return ["review_uuid", "patchSet_uuid", "approval_uuid"]
 
-    @classmethod
-    def get_sh_identity(cls, user):
+    def get_field_unique_id(self):
+        return "ocean-unique-id"
+
+    def get_sh_identity(self, user):
         identity = {}
         for field in ['name', 'email', 'username']:
             identity[field] = None
@@ -56,47 +57,6 @@ class GerritEnrich(Enrich):
         if 'email' in user: identity['email'] = user['email']
         if 'username' in user: identity['username'] = user['username']
         return identity
-
-    def get_item_sh(self, item):
-        """ Add sorting hat enrichment fields """
-        eitem = {}  # Item enriched
-
-        item = item['data']
-
-        identity = GerritEnrich.get_sh_identity(item['owner'])
-        eitem["owner_uuid"] = self.get_uuid(identity, self.get_connector_name())
-        eitem["owner_name"] = identity['name']
-
-        enrollments = self.get_enrollments(eitem["owner_uuid"])
-        # TODO: get the org_name for the current commit time
-        if len(enrollments) > 0:
-            eitem["org_name"] = enrollments[0].organization.name
-        else:
-            eitem["org_name"] = None
-        # bot
-        u = self.get_unique_identities(eitem["owner_uuid"])[0]
-        if u.profile:
-            eitem["bot"] = u.profile.is_bot
-        else:
-            eitem["bot"] = False  # By default, identities are not bots
-        eitem["bot"] = 0  # Not supported yet
-
-        if identity['email']:
-            try:
-                eitem["domain"] = identity['email'].split("@")[1]
-            except IndexError:
-                logging.warning("Bad email format: %s" % (identity['email']))
-                eitem["domain"] = None
-        else:
-            eitem["domain"] = None
-
-        # Unify fields name
-        eitem["author_uuid"] = eitem["owner_uuid"]
-        eitem["author_name"] = eitem["owner_name"]
-        eitem["author_org_name"] = eitem["org_name"]
-        eitem["author_domain"] = eitem["domain"]
-
-        return eitem
 
     def get_item_project(self, item):
         """ Get project mapping enrichment field """
@@ -237,16 +197,23 @@ class GerritEnrich(Enrich):
         createdOn_date = parser.parse(review['createdOn'])
         if len(review["patchSets"]) > 0:
             createdOn_date = parser.parse(review["patchSets"][0]['createdOn'])
+        lastUpdated_date = parser.parse(review['lastUpdated'])
         seconds_day = float(60*60*24)
-        timeopen = \
-            (datetime.utcnow()-createdOn_date).total_seconds() / seconds_day
+        if eitem['status'] in ['MERGED','ABANDONED']:
+            timeopen = \
+                (lastUpdated_date-createdOn_date).total_seconds() / seconds_day
+        else:
+            timeopen = \
+                (datetime.utcnow()-createdOn_date).total_seconds() / seconds_day
         eitem["timeopen"] =  '%.2f' % timeopen
 
         if self.sortinghat:
-            eitem.update(self.get_item_sh(item))
+            eitem.update(self.get_item_sh(item, "owner"))
 
         if self.prjs_map:
             eitem.update(self.get_item_project(item))
+
+        eitem.update(self.get_grimoire_fields(review['createdOn'], "review"))
 
         bulk_json = '{"index" : {"_id" : "%s" } }\n' % (eitem[self.get_field_unique_id()])  # Bulk operation
         bulk_json += json.dumps(eitem)+"\n"
@@ -261,14 +228,14 @@ class GerritEnrich(Enrich):
             url_bulk = self.elastic.index_url+'/'+self.type_name+'/_bulk'
             try:
                 task_init = time.time()
-                requests.put(url_bulk, data=bulk_json)
+                self.requests.put(url_bulk, data=bulk_json)
                 logging.debug("bulk packet sent (%.2f sec, %i items)"
                               % (time.time()-task_init, current))
             except UnicodeEncodeError:
                 # Why is requests encoding the POST data as ascii?
                 logging.error("Unicode error for events in review: " + review['id'])
                 safe_json = str(bulk_json.encode('ascii', 'ignore'),'ascii')
-                requests.put(url_bulk, data=safe_json)
+                self.requests.put(url_bulk, data=safe_json)
                 # Continue with execution.
 
         bulk_json = ""  # json data added in bulk operations

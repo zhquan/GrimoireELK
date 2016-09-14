@@ -28,7 +28,7 @@ import logging
 
 from datetime import datetime
 
-import requests
+from dateutil import parser
 
 from .utils import get_time_diff_days
 
@@ -38,8 +38,8 @@ GITHUB = 'https://github.com/'
 
 class GitHubEnrich(Enrich):
 
-    def __init__(self, github, sortinghat=True, db_projects_map = None):
-        super().__init__(sortinghat, db_projects_map)
+    def __init__(self, github, db_sortinghat=None, db_projects_map = None):
+        super().__init__(db_sortinghat, db_projects_map)
 
         self.elastic = None
         self.perceval_backend = github
@@ -82,23 +82,40 @@ class GitHubEnrich(Enrich):
         """ Add sorting hat enrichment fields """
         eitem = {}  # Item enriched
 
-        user = item['user_data']
+        data = item['data']
+        eitem['user_uuid'] = None
+        user = data['user_data']
         if user is not None:
             identity = self.get_sh_identity(user)
             eitem["user_uuid"] = \
                 self.get_uuid(identity, self.get_connector_name())
-            eitem["author_uuid"] = eitem["user_uuid"]
-        else:
-            eitem['user_uuid'] = None
-            eitem['author_uuid'] = None
+            eitem['user_name'] = identity['name']
+            update = None
+            if self.get_field_date() in item:
+                 update = parser.parse(item[self.get_field_date()])
+            eitem["user_org_name"] = self.get_enrollment(eitem['user_uuid'], update)
+            eitem["user_domain"] = self.get_domain(identity)
+            eitem["user_bot"] = self.is_bot(eitem['user_uuid'])
 
-        assignee = item['assignee_data']
+        eitem["assignee_uuid"] = None
+        assignee = data['assignee_data']
         if assignee:
             identity = self.get_sh_identity(assignee)
             eitem["assignee_uuid"] =  \
                 self.get_uuid(identity, self.get_connector_name())
-        else:
-            eitem["assignee_uuid"] = None
+            eitem['assignee_name'] = identity['name']
+            update = None
+            if self.get_field_date() in item:
+                 update = parser.parse(item[self.get_field_date()])
+            eitem["assignee_org_name"] = self.get_enrollment(eitem['assignee_uuid'], update)
+            eitem["assignee_domain"] = self.get_domain(identity)
+            eitem["assignee_bot"] = self.is_bot(eitem['assignee_uuid'])
+
+        # Unify fields for SH filtering
+        eitem["author_uuid"] = eitem["user_uuid"]
+        eitem["author_name"] = eitem["user_name"]
+        eitem["author_org_name"] = eitem["user_org_name"]
+        eitem["author_domain"] = eitem["user_domain"]
 
         return eitem
 
@@ -123,7 +140,7 @@ class GitHubEnrich(Enrich):
         else:
             url = 'https://maps.googleapis.com/maps/api/geocode/json'
             params = {'sensor': 'false', 'address': location}
-            r = requests.get(url, params=params)
+            r = self.requests.get(url, params=params)
 
             try:
                 logging.debug("Using Maps API to find %s" % (location))
@@ -156,7 +173,7 @@ class GitHubEnrich(Enrich):
 
         url = self.elastic.url + "/"+index_github
         url += "/_search" + "?" + "size=%i" % res_size
-        r = requests.get(url)
+        r = self.requests.get(url)
         type_items = r.json()
 
         if 'hits' not in type_items:
@@ -168,8 +185,10 @@ class GitHubEnrich(Enrich):
                     item = hit['_source']
                     cache[item[_key]] = item
                 _from += res_size
-                r = requests.get(url+"&from=%i" % _from)
+                r = self.requests.get(url+"&from=%i" % _from)
                 type_items = r.json()
+                if 'hits' not in type_items:
+                    break
 
         return cache
 
@@ -189,7 +208,7 @@ class GitHubEnrich(Enrich):
 
         for loc in self.geolocations:
             if current >= max_items:
-                requests.put(url, data=bulk_json)
+                self.requests.put(url, data=bulk_json)
                 bulk_json = ""
                 current = 0
 
@@ -206,7 +225,7 @@ class GitHubEnrich(Enrich):
             bulk_json += data_json +"\n"  # Bulk document
             current += 1
 
-        requests.put(url, data = bulk_json)
+        self.requests.put(url, data = bulk_json)
 
         logging.debug("Adding geoloc to ES Done")
 
@@ -321,8 +340,10 @@ class GitHubEnrich(Enrich):
         rich_issue['repository'] = rich_issue['origin']
 
         rich_issue['pull_request'] = True
+        rich_issue['item_type'] = 'pull request'
         if not 'head' in issue.keys() and not 'pull_request' in issue.keys():
             rich_issue['pull_request'] = False
+            rich_issue['item_type'] = 'issue'
 
         rich_issue['github_repo'] = item['origin'].replace(GITHUB,'').replace('.git','')
         rich_issue["url_id"] = rich_issue['github_repo']+"/issues/"+rich_issue['id_in_repo']
@@ -331,7 +352,10 @@ class GitHubEnrich(Enrich):
             rich_issue['project'] = item['project']
 
         if self.sortinghat:
-            rich_issue.update(self.get_item_sh(issue))
+            rich_issue.update(self.get_item_sh(item))
+
+        rich_issue.update(self.get_grimoire_fields(issue['created_at'], "issue"))
+
 
         return rich_issue
 
@@ -346,7 +370,7 @@ class GitHubEnrich(Enrich):
 
         for issue in issues:
             if current >= max_items:
-                requests.put(url, data=bulk_json)
+                self.requests.put(url, data=bulk_json)
                 bulk_json = ""
                 current = 0
 
@@ -355,7 +379,7 @@ class GitHubEnrich(Enrich):
             bulk_json += '{"index" : {"_id" : "%s" } }\n' % (rich_issue[self.get_field_unique_id()])
             bulk_json += data_json +"\n"  # Bulk document
             current += 1
-        requests.put(url, data = bulk_json)
+        self.requests.put(url, data = bulk_json)
 
         logging.debug("Updating GitHub users geolocations in Elastic")
         self.geo_locations_to_es() # Update geolocations in Elastic

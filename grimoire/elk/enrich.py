@@ -27,6 +27,11 @@ from functools import lru_cache
 import logging
 import MySQLdb
 
+import requests
+
+import requests
+
+from dateutil import parser
 
 from sortinghat.db.database import Database
 from sortinghat import api
@@ -36,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 class Enrich(object):
 
-    def __init__(self, db_projects_map=None, db_sortinghat=None):
+    def __init__(self, db_sortinghat=None, db_projects_map=None, insecure=True):
+
         self.sortinghat = False
         if db_sortinghat:
             self.sh_db = Database("root", "", db_sortinghat, "mariadb")
@@ -44,6 +50,12 @@ class Enrich(object):
         self.prjs_map = None
         if  db_projects_map:
             self.prjs_map = self._get_projects_map(db_projects_map)
+
+        self.requests = requests.Session()
+        if insecure:
+            requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+            self.requests.verify = False
+
 
     def _get_projects_map(self, db_projects_map):
         prjs_map = {}
@@ -130,8 +142,98 @@ class Enrich(object):
 
         return {"items":mapping}
 
+    def get_grimoire_fields(self, creation_date, item_name):
+        """ Return common grimoire fields for all data sources """
+
+        grimoire_date = None
+        try:
+            grimoire_date = parser.parse(creation_date).isoformat()
+        except Exception as ex:
+            pass
+
+        name = "is_"+self.get_connector_name()+"_"+item_name
+
+        return {
+            "grimoire_creation_date": grimoire_date,
+            name: 1
+        }
+
 
     # Sorting Hat stuff to be moved to SortingHat class
+
+    def get_sh_identity(self, identity):
+        """ Empty identity. Real implementation in each data source. """
+        identity = {}
+        for field in ['name', 'email', 'username']:
+            identity[field] = None
+        return identity
+
+    def get_domain(self, identity):
+        """ Get the domain from a SH identity """
+        domain = None
+        if identity['email']:
+            try:
+                domain = identity['email'].split("@")[1]
+            except IndexError:
+                # logging.warning("Bad email format: %s" % (identity['email']))
+                pass
+        return domain
+
+    def is_bot(self, uuid):
+        bot = False
+        u = self.get_unique_identities(uuid)[0]
+        if u.profile:
+            bot = u.profile.is_bot
+        return bot
+
+    def get_enrollment(self, uuid, item_date):
+        """ Get the enrollment for the uuid when the item was done """
+        # item_date must be offset-naive (utc)
+        if item_date and item_date.tzinfo:
+            item_date = (item_date-item_date.utcoffset()).replace(tzinfo=None)
+
+        enrollments = self.get_enrollments(uuid)
+        enroll = 'Unknown'
+        if len(enrollments) > 0:
+            for enrollment in enrollments:
+                if not item_date:
+                    enroll = enrollment.organization.name
+                    break
+                elif item_date >= enrollment.start and item_date <= enrollment.end:
+                    enroll = enrollment.organization.name
+                    break
+        return enroll
+
+    def get_item_sh_fields(self, identity, item_date):
+        """ Get standard SH fields from a SH identity """
+        eitem = {}  # Item enriched
+
+        eitem["author_name"] = identity['name']
+        eitem["author_uuid"] = self.get_uuid(identity, self.get_connector_name())
+        eitem["author_org_name"] = self.get_enrollment(eitem["author_uuid"], item_date)
+        eitem["author_bot"] = self.is_bot(eitem['author_uuid'])
+        eitem["author_domain"] = self.get_identity_domain(identity)
+
+        return eitem
+
+    def get_item_sh(self, item, identity_field):
+        """ Add sorting hat enrichment fields for the author of the item """
+
+        eitem = {}  # Item enriched
+        if 'data' in item:
+            # perceval data
+            data = item['data']
+        else:
+            data = item
+
+        # Add Sorting Hat fields
+        if identity_field not in data:
+            return eitem
+        identity  = self.get_sh_identity(data[identity_field])
+        eitem = self.get_item_sh_fields(identity, parser.parse(item[self.get_field_date()]))
+
+        return eitem
+
     @lru_cache()
     def get_enrollments(self, uuid):
         return api.enrollments(self.sh_db, uuid)
@@ -183,6 +285,10 @@ class Enrich(object):
             uuid = None
         except UnicodeEncodeError:
             logger.error("UnicodeEncodeError")
+            logger.error("%s %s" % (identity, uuid))
+            uuid = None
+        except Exception as ex:
+            logger.error("Unknown error adding sorting hat identity.")
             logger.error("%s %s" % (identity, uuid))
             uuid = None
         return uuid

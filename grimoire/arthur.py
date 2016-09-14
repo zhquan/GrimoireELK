@@ -27,13 +27,12 @@ from datetime import datetime
 from dateutil import parser
 import logging
 import requests
-
+import traceback
 
 from grimoire.elk.sortinghat import SortingHat
 from grimoire.ocean.conf import ConfOcean
 from grimoire.utils import get_elastic
-from grimoire.utils import get_connectors, get_connector_from_name
-import traceback
+from grimoire.utils import get_connector_from_name
 
 def feed_backend(url, clean, fetch_cache, backend_name, backend_params,
                  es_index=None, es_index_enrich=None, project=None):
@@ -43,9 +42,9 @@ def feed_backend(url, clean, fetch_cache, backend_name, backend_params,
     repo = {}    # repository data to be stored in conf
     repo['backend_name'] = backend_name
     repo['backend_params'] = backend_params
+
     if es_index:
         clean = False  # don't remove index, it could be shared
-
 
     if not get_connector_from_name(backend_name):
         raise RuntimeError("Unknown backend %s" % backend_name)
@@ -58,8 +57,7 @@ def feed_backend(url, clean, fetch_cache, backend_name, backend_params,
         backend = backend_cmd.backend
         ocean_backend = connector[1](backend, fetch_cache=fetch_cache, project=project)
 
-        logging.info("Feeding Ocean from %s (%s)" % (backend_name,
-                                                     backend.origin))
+        logging.info("Feeding Ocean from %s (%s)", backend_name, backend.origin)
 
         if not es_index:
             es_index = backend_name + "_" + backend.origin
@@ -71,13 +69,26 @@ def feed_backend(url, clean, fetch_cache, backend_name, backend_params,
 
         repo['repo_update_start'] = datetime.now().isoformat()
 
+        # offset param suppport
+        offset = None
+
         try:
-            if backend_cmd.from_date.replace(tzinfo=None) == \
-                parser.parse("1970-01-01").replace(tzinfo=None):
-                # Don't use the default value
-                ocean_backend.feed()
+            offset = backend_cmd.offset
+        except AttributeError:
+            # The backend does not support offset
+            pass
+
+        # from_date param support
+        try:
+            if offset:
+                ocean_backend.feed(offset=offset)
             else:
-                ocean_backend.feed(backend_cmd.from_date)
+                if backend_cmd.from_date.replace(tzinfo=None) == \
+                    parser.parse("1970-01-01").replace(tzinfo=None):
+                    # Don't use the default value
+                    ocean_backend.feed()
+                else:
+                    ocean_backend.feed(backend_cmd.from_date)
         except AttributeError:
             # The backend does not support from_date
             ocean_backend.feed()
@@ -234,12 +245,22 @@ def enrich_sortinghat(backend_name, ocean_backend, enrich_backend):
     return enrich_count_merged
 
 
+def do_studies(enrich_backend, last_enrich):
+    try:
+        for study in enrich_backend.studies:
+            logging.info("Starting study: %s", study)
+            study(from_date=last_enrich)
+    except Exception as e:
+        logging.warning("Problem executing studies for %s", enrich_backend)
+        print(e)
 
 
 def enrich_backend(url, clean, backend_name, backend_params, ocean_index=None,
                    ocean_index_enrich = None,
                    db_projects_map=None, db_sortinghat=None,
-                   no_incremental=False):
+                   no_incremental=False, only_identities=False,
+                   github_token=None, studies=False, only_studies=False,
+                   url_enrich=None):
     """ Enrich Ocean index """
 
     backend = None
@@ -254,9 +275,12 @@ def enrich_backend(url, clean, backend_name, backend_params, ocean_index=None,
     klass = connector[3]  # BackendCmd for the connector
 
     try:
-        backend_cmd = klass(*backend_params)
+        backend = None
+        if klass:
+            # Data is retrieved from Perceval
+            backend_cmd = klass(*backend_params)
 
-        backend = backend_cmd.backend
+            backend = backend_cmd.backend
 
         if ocean_index_enrich:
             enrich_index = ocean_index_enrich
@@ -265,45 +289,65 @@ def enrich_backend(url, clean, backend_name, backend_params, ocean_index=None,
                 ocean_index = backend_name + "_" + backend.origin
             enrich_index = ocean_index+"_enrich"
 
-        enrich_backend = connector[2](backend, db_projects_map, db_sortinghat)
-        elastic_enrich = get_elastic(url, enrich_index, clean, enrich_backend)
+        enrich_backend = connector[2](backend, db_sortinghat, db_projects_map)
+        if url_enrich:
+            elastic_enrich = get_elastic(url_enrich, enrich_index, clean, enrich_backend)
+        else:
+            elastic_enrich = get_elastic(url, enrich_index, clean, enrich_backend)
         enrich_backend.set_elastic(elastic_enrich)
+        if github_token and backend_name == "git":
+            enrich_backend.set_github_token(github_token)
 
         # We need to enrich from just updated items since last enrichment
         # Always filter by origin to support multi origin indexes
-        filter_ = {"name":"origin",
-                   "value":backend.origin}
-        last_enrich = enrich_backend.get_last_update_from_es(filter_)
+        last_enrich = None
+        if backend:
+            # Only supported in data retrieved from a perceval backend
+            filter_ = {"name":"origin",
+                       "value":backend.origin}
+            last_enrich = enrich_backend.get_last_update_from_es(filter_)
         if no_incremental:
             last_enrich = None
 
-        logging.debug("Last enrichment: %s" % (last_enrich))
+        logging.debug("Last enrichment: %s", last_enrich)
+
+        # last_enrich=parser.parse('2016-06-01')
 
         ocean_backend = connector[1](backend, from_date=last_enrich)
         clean = False  # Don't remove ocean index when enrich
         elastic_ocean = get_elastic(url, ocean_index, clean, ocean_backend)
         ocean_backend.set_elastic(elastic_ocean)
 
-        logging.info("Adding enrichment data to %s" %
-                     (enrich_backend.elastic.index_url))
+        logging.info("Adding enrichment data to %s", enrich_backend.elastic.index_url)
 
-        if db_sortinghat:
-            enrich_count_merged = 0
+        if only_studies:
+            logging.info("Running only studies (no SH and no enrichment)")
+            do_studies(enrich_backend, last_enrich)
 
-            enrich_count_merged = enrich_sortinghat(backend_name,
-                                                    ocean_backend, enrich_backend)
-            logging.info("Total items enriched for merged identities %i " %  enrich_count_merged)
-        # Enrichment for the new items once SH update is finished
-        enrich_count = enrich_items(ocean_backend, enrich_backend)
-        logging.info("Total items enriched %i " %  enrich_count)
+        else:
+            if db_sortinghat:
+                enrich_count_merged = 0
 
+                enrich_count_merged = enrich_sortinghat(ocean_backend, enrich_backend)
+                logging.info("Total items enriched for merged identities %i ", enrich_count_merged)
+
+            if only_identities:
+                logging.info("Only SH identities added. Enrich not done!")
+
+            else:
+                # Enrichment for the new items once SH update is finished
+                enrich_count = enrich_items(ocean_backend, enrich_backend)
+                logging.info("Total items enriched %i ", enrich_count)
+
+                if studies:
+                    do_studies(enrich_backend, last_enrich)
 
     except Exception as ex:
         traceback.print_exc()
         if backend:
-            logging.error("Error enriching ocean from %s (%s): %s" %
-                          (backend_name, backend.origin, ex))
+            logging.error("Error enriching ocean from %s (%s): %s",
+                          backend_name, backend.origin, ex)
         else:
-            logging.error("Error enriching ocean %s" % ex)
+            logging.error("Error enriching ocean %s", ex)
 
-    logging.info("Done %s " % (backend_name))
+    logging.info("Done %s ", backend_name)
