@@ -55,11 +55,8 @@ class ElasticSearch(object):
         self.mappings = mappings
         self.clean = clean
         # Valid index for elastic
-        if index_name:
-            self.set_index(index_name)
-        else:
-            self.index = None
-            self.index_url = None
+        self.index = self.safe_index(index)
+        self.index_url = self.url+"/"+self.index
         self.max_items_bulk = 100
         self.wait_bulk_seconds = 2  # time to wait to complete a bulk operation
 

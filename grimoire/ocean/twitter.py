@@ -26,5 +26,8 @@ from grimoire.ocean.elastic import ElasticOcean
 class TwitterOcean(ElasticOcean):
     """Twitter Ocean feeder"""
 
+    def get_field_unique_id(self):
+        return "id"    
+
     def _fix_item(self, item):
         item["ocean-unique-id"] = item["data"]["id"]

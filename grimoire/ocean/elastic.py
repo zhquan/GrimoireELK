@@ -56,8 +56,6 @@ class ElasticOcean(object):
         # origin could come in perceval_backend or directly
         if perceval_backend:
             self.origin = perceval_backend.origin
-        if origin:
-            self.origin = origin
         self.last_update = None  # Last update in ocean items index for feed
         self.from_date = from_date  # fetch from_date
         self.fetch_cache = fetch_cache  # fetch from cache
@@ -77,7 +75,6 @@ class ElasticOcean(object):
         """ Field with the update in the JSON items. Now the same in all. """
         return "metadata__updated_on"
 
-    @classmethod
     def get_field_unique_id(self):
         return "uuid"
 
