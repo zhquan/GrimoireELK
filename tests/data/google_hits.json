@@ -1,0 +1,74 @@
+[
+    {
+        "@timestamp": "2016-09-15T10:59:20.750Z",
+        "@version": "1",
+        "command": "python3 /home/logstash/googleHits.py",
+        "hits": 312000,
+        "host": "e910eecfe920",
+        "keywords": [
+            "couchbase",
+            "database"
+        ],
+        "type": "googleSearchHits"
+    },
+    {
+        "@timestamp": "2016-09-15T10:58:20.736Z",
+        "@version": "1",
+        "command": "python3 /home/logstash/googleHits.py",
+        "hits": 312000,
+        "host": "e910eecfe920",
+        "keywords": [
+            "couchbase",
+            "database"
+        ],
+        "type": "googleSearchHits"
+    },
+    {
+        "@timestamp": "2016-09-15T10:57:10.706Z",
+        "@version": "1",
+        "command": "python3 /home/logstash/googleHits.py",
+        "hits": 312000,
+        "host": "e910eecfe920",
+        "keywords": [
+            "couchbase",
+            "database"
+        ],
+        "type": "googleSearchHits"
+    },
+    {
+        "@timestamp": "2016-09-15T10:54:50.701Z",
+        "@version": "1",
+        "command": "python3 /home/logstash/googleHits.py",
+        "hits": 312000,
+        "host": "e910eecfe920",
+        "keywords": [
+            "couchbase",
+            "database"
+        ],
+        "type": "googleSearchHits"
+    },
+    {
+        "@timestamp": "2016-09-15T10:54:10.745Z",
+        "@version": "1",
+        "command": "python3 /home/logstash/googleHits.py",
+        "hits": 312000,
+        "host": "e910eecfe920",
+        "keywords": [
+            "couchbase",
+            "database"
+        ],
+        "type": "googleSearchHits"
+    },
+    {
+        "@timestamp": "2016-09-15T10:52:30.819Z",
+        "@version": "1",
+        "command": "python3 /home/logstash/googleHits.py",
+        "hits": 312000,
+        "host": "e910eecfe920",
+        "keywords": [
+            "couchbase",
+            "database"
+        ],
+        "type": "googleSearchHits"
+    }
+]
