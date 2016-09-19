@@ -38,6 +38,7 @@ from grimoire.ocean.discourse import DiscourseOcean
 from grimoire.ocean.gerrit import GerritOcean
 from grimoire.ocean.git import GitOcean
 from grimoire.ocean.github import GitHubOcean
+from grimoire.ocean.google_hits import GoogleHitsOcean
 from grimoire.ocean.jenkins import JenkinsOcean
 from grimoire.ocean.jira import JiraOcean
 from grimoire.ocean.kitsune import KitsuneOcean
@@ -58,6 +59,7 @@ from grimoire.elk.discourse import DiscourseEnrich
 from grimoire.elk.git import GitEnrich
 from grimoire.elk.github import GitHubEnrich
 from grimoire.elk.gerrit import GerritEnrich
+from grimoire.elk.google_hits import GoogleHitsEnrich
 from grimoire.elk.jenkins import JenkinsEnrich
 from grimoire.elk.jira import JiraEnrich
 from grimoire.elk.kitsune import KitsuneEnrich
@@ -123,6 +125,7 @@ def get_connectors():
             "git":[Git, GitOcean, GitEnrich, GitCommand],
             "github":[GitHub, GitHubOcean, GitHubEnrich, GitHubCommand],
             "gmane":[Gmane, MBoxOcean, MBoxEnrich, GmaneCommand],
+            "google_hits":[None, GoogleHitsOcean, GoogleHitsEnrich, None],
             "jenkins":[Jenkins, JenkinsOcean, JenkinsEnrich, JenkinsCommand],
             "jira":[Jira, JiraOcean, JiraEnrich, JiraCommand],
             "kitsune":[Kitsune, KitsuneOcean, KitsuneEnrich, KitsuneCommand],
