@@ -63,6 +63,8 @@ class GoogleHitsEnrich(Enrich):
                 eitem[f] = hits[f]
             else:
                 eitem[f] = None
+        # Numeric field
+        eitem["hits"] = int(hits["hits"])
         # Date fields
         eitem["created_at"]  = parser.parse(hits["@timestamp"]).isoformat()
 
