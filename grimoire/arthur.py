@@ -36,7 +36,8 @@ from grimoire.utils import get_elastic
 from grimoire.utils import get_connector_from_name
 
 def feed_backend(url, clean, fetch_cache, backend_name, backend_params,
-                 es_index=None, es_index_enrich=None, project=None):
+                 es_index=None, es_index_enrich=None, project=None,
+                 skip_broken_items=False):
     """ Feed Ocean with backend data """
 
     backend = None
@@ -93,28 +94,28 @@ def feed_backend(url, clean, fetch_cache, backend_name, backend_params,
         # from_date param support
         try:
             if offset and category:
-                ocean_backend.feed(offset=offset, category=category)
+                ocean_backend.feed(offset=offset, category=category, skip_broken_items=skip_broken_items)
             elif offset:
-                ocean_backend.feed(offset=offset)
+                ocean_backend.feed(offset=offset, skip_broken_items=skip_broken_items)
             else:
                 if backend_cmd.from_date.replace(tzinfo=None) == \
                     parser.parse("1970-01-01").replace(tzinfo=None):
                     # Don't use the default value
                     if category:
-                        ocean_backend.feed(category=category)
+                        ocean_backend.feed(category=category, skip_broken_items=skip_broken_items)
                     else:
-                        ocean_backend.feed()
+                        ocean_backend.feed(skip_broken_items=skip_broken_items)
                 else:
                     if category:
-                        ocean_backend.feed(backend_cmd.from_date, category=category)
+                        ocean_backend.feed(backend_cmd.from_date, category=category, skip_broken_items=skip_broken_items)
                     else:
-                        ocean_backend.feed(backend_cmd.from_date)
+                        ocean_backend.feed(backend_cmd.from_date, skip_broken_items=skip_broken_items)
         except AttributeError:
             # The backend does not support from_date
             if category:
-                ocean_backend.feed(category=category)
+                ocean_backend.feed(category=category, skip_broken_items=skip_broken_items)
             else:
-                ocean_backend.feed()
+                ocean_backend.feed(skip_broken_items=skip_broken_items)
 
     except Exception as ex:
         if backend:

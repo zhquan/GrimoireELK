@@ -29,6 +29,8 @@
 import inspect
 import json
 import logging
+import traceback
+
 import requests
 
 from datetime import datetime
@@ -107,7 +109,7 @@ class ElasticOcean(object):
         # Also add timestamp used in incremental enrichment
         item['metadata__timestamp'] = timestamp.isoformat()
 
-    def feed(self, from_date=None, offset=None, category=None):
+    def feed(self, from_date=None, offset=None, category=None, skip_broken_items=False):
         """ Feed data in Elastic from Perceval """
 
         # Check if backend supports from_date
@@ -153,8 +155,18 @@ class ElasticOcean(object):
                     items = self.perceval_backend.fetch(category=category)
                 else:
                     items = self.perceval_backend.fetch()
-        for item in items:
-            # print("%s %s" % (item['url'], item['lastUpdated_date']))
+        while True:
+            try:
+                item = next(items)
+            except StopIteration:
+                break
+            except:
+                logging.error("Error retrieving item from perceval")
+                traceback.print_exc()
+                if not skip_broken_items:
+                    break
+                else:
+                    continue
             # Add date field for incremental analysis if needed
             self.add_update_date(item)
             self._fix_item(item)
