@@ -46,6 +46,7 @@ from grimoire.ocean.mediawiki import MediaWikiOcean
 from grimoire.ocean.phabricator import PhabricatorOcean
 from grimoire.ocean.remo2 import ReMoOcean
 from grimoire.ocean.stackexchange import StackExchangeOcean
+from grimoire.ocean.sortinghat_ds import SortingHatDSOcean
 from grimoire.ocean.supybot import SupybotOcean
 from grimoire.ocean.telegram import TelegramOcean
 from grimoire.ocean.twitter import TwitterOcean
@@ -70,6 +71,7 @@ from grimoire.elk.phabricator import PhabricatorEnrich
 from grimoire.elk.remo2 import ReMoEnrich
 from grimoire.elk.pipermail import PipermailEnrich
 from grimoire.elk.stackexchange import StackExchangeEnrich
+from grimoire.elk.sortinghat_ds import SortingHatDSEnrich
 from grimoire.elk.supybot import SupybotEnrich
 from grimoire.elk.telegram import TelegramEnrich
 from grimoire.elk.twitter import TwitterEnrich
@@ -93,6 +95,7 @@ from perceval.backends.pipermail import Pipermail, PipermailCommand
 # from perceval.backends.remo import ReMo, ReMoCommand
 from perceval.backends.remo2 import ReMo, ReMoCommand
 from perceval.backends.stackexchange import StackExchange, StackExchangeCommand
+from perceval.backends.sortinghat import SortingHat, SortingHatCommand
 from perceval.backends.supybot import Supybot, SupybotCommand
 from perceval.backends.telegram import Telegram, TelegramCommand
 
@@ -146,6 +149,7 @@ def get_connectors():
             "remo":[ReMo, ReMoOcean, ReMoEnrich, ReMoCommand],
             "stackexchange":[StackExchange, StackExchangeOcean,
                              StackExchangeEnrich, StackExchangeCommand],
+             "sortinghat":[SortingHat, SortingHatDSOcean, SortingHatDSEnrich, SortingHatCommand],
              "supybot":[Supybot, SupybotOcean, SupybotEnrich, SupybotCommand],
              "telegram":[Telegram, TelegramOcean, TelegramEnrich, TelegramCommand],
              "twitter":[None, TwitterOcean, TwitterEnrich, None]
