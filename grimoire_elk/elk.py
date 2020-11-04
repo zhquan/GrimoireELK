@@ -22,7 +22,7 @@
 import inspect
 import logging
 
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, RequestsHttpConnection
 
 from perceval.backend import find_signature_parameters, Archive
 from perceval.errors import RateLimitError
@@ -593,7 +593,7 @@ def delete_orphan_unique_identities(es, sortinghat_db, current_data_source, acti
         count = 0
 
         for uuid in target_uuids:
-            success = SortingHat.remove_unique_identity(sortinghat_db, uuid)
+            success = SortingHat.remove_identity(sortinghat_db, uuid)
             count = count + 1 if success else count
 
         return count
@@ -605,9 +605,9 @@ def delete_orphan_unique_identities(es, sortinghat_db, current_data_source, acti
         :param data_sources: target data sources
         """
         count = 0
-        for ident in unique_ident.identities:
-            if ident.source not in data_sources:
-                success = SortingHat.remove_identity(sortinghat_db, ident.id)
+        for ident in unique_ident['identities']:
+            if ident['source'] not in data_sources:
+                success = SortingHat.remove_identity(sortinghat_db, ident['uuid'])
                 count = count + 1 if success else count
 
         return count
@@ -619,8 +619,8 @@ def delete_orphan_unique_identities(es, sortinghat_db, current_data_source, acti
         :param data_sources: target data sources
         """
         in_active = False
-        for ident in unique_ident.identities:
-            if ident.source in data_sources:
+        for ident in unique_ident['identities']:
+            if ident['source'] in data_sources:
                 in_active = True
                 break
 
@@ -648,7 +648,7 @@ def delete_orphan_unique_identities(es, sortinghat_db, current_data_source, acti
             continue
 
         # Add the uuid to the list to check its existence in the IDENTITIES_INDEX
-        uuids_to_process.append(unique_identity.uuid)
+        uuids_to_process.append(unique_identity['mk'])
 
         # Process the uuids in block of SIZE_SCROLL_IDENTITIES_INDEX
         if len(uuids_to_process) != SIZE_SCROLL_IDENTITIES_INDEX:
@@ -719,7 +719,7 @@ def delete_inactive_unique_identities(es, sortinghat_db, before_date):
     while scroll_size > 0:
         for item in page['hits']['hits']:
             to_delete = item['_source']['sh_uuid']
-            success = SortingHat.remove_unique_identity(sortinghat_db, to_delete)
+            success = SortingHat.remove_identity(sortinghat_db, to_delete)
             # increment the number of deleted identities only if the corresponding command was successful
             count = count + 1 if success else count
 
@@ -744,7 +744,8 @@ def retain_identities(retention_time, es_enrichment_url, sortinghat_db, data_sou
     before_date = get_diff_current_date(minutes=retention_time)
     before_date_str = before_date.isoformat()
 
-    es = Elasticsearch([es_enrichment_url], timeout=120, max_retries=20, retry_on_timeout=True, verify_certs=False)
+    es = Elasticsearch([es_enrichment_url], timeout=120, max_retries=20, retry_on_timeout=True,
+                       connection_class=RequestsHttpConnection, verify_certs=False)
 
     # delete the unique identities which have not been seen after `before_date`
     delete_inactive_unique_identities(es, sortinghat_db, before_date_str)
