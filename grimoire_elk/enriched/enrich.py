@@ -33,12 +33,13 @@ from dateutil.relativedelta import relativedelta
 
 import pkg_resources
 from functools import lru_cache
+from sgqlc.operation import Operation
 
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection
 from geopy.geocoders import Nominatim
 
 from perceval.backend import find_signature_parameters
-from grimoirelab_toolkit.datetime import (datetime_utcnow, str_to_datetime)
+from grimoirelab_toolkit.datetime import datetime_utcnow, str_to_datetime
 
 from ..elastic import ElasticSearch
 from ..elastic_items import (ElasticItems,
@@ -62,9 +63,9 @@ except ImportError:
     MYSQL_LIBS = False
 
 try:
-    from sortinghat.db.database import Database
-    from sortinghat import api, utils
-    from sortinghat.exceptions import NotFoundError, InvalidValueError
+    from sortinghat.cli.client import (SortingHatClient,
+                                       SortingHatClientError,
+                                       SortingHatSchema)
 
     from .sortinghat_gelk import SortingHat
 
@@ -116,7 +117,7 @@ class Enrich(ElasticItems):
     ONION_INTERVAL = seconds = 3600 * 24 * 7
 
     def __init__(self, db_sortinghat=None, db_projects_map=None, json_projects_map=None,
-                 db_user='', db_password='', db_host='', insecure=True):
+                 db_user='', db_password='', db_host='', insecure=True, db_port='8000', db_path='graphql/'):
 
         perceval_backend = None
         super().__init__(perceval_backend, insecure=insecure)
@@ -129,7 +130,12 @@ class Enrich(ElasticItems):
         if db_sortinghat:
             # self.sh_db = Database("root", "", db_sortinghat, "mariadb")
             if not Enrich.sh_db:
-                Enrich.sh_db = Database(db_user, db_password, db_sortinghat, db_host)
+                 client = SortingHatClient(host=db_host, port=db_port,
+                                           path=db_path, ssl=False,
+                                           user=db_user, password=db_password)
+                 client.connect()
+                 Enrich.sh_db = client
+
             self.sortinghat = True
 
         self.prjs_map = None  # mapping beetween repositories and projects
@@ -664,10 +670,21 @@ class Enrich(ElasticItems):
         return domain
 
     def is_bot(self, uuid):
-        bot = False
-        u = self.get_unique_identity(uuid)
-        if u.profile:
-            bot = u.profile.is_bot
+        args = {
+            'filters': {
+                'uuid': uuid
+            }
+        }
+        try:
+            op = Operation(SortingHatSchema.Query)
+            op.individuals(**args)
+            individual = op.individuals().entities()
+            profile = individual.profile()
+            profile.is_bot()
+            result = self.sh_db.execute(op)
+            bot = result['data']['individuals']['entities'][0]['profile']['isBot']
+        except SortingHatClientError as e:
+            logger.error("[sortinghat] Error is bot {}: {}".format(uuid, e.errors[0]['message']))
         return bot
 
     def get_enrollment(self, uuid, item_date):
@@ -680,11 +697,13 @@ class Enrich(ElasticItems):
         enroll = self.unaffiliated_group
         if enrollments:
             for enrollment in enrollments:
+                start = str_to_datetime(enrollment['start'])
+                end = str_to_datetime(enrollment['end'])
                 if not item_date:
-                    enroll = enrollment.organization.name
+                    enroll = enrollment['organization']['name']
                     break
-                elif item_date >= enrollment.start and item_date <= enrollment.end:
-                    enroll = enrollment.organization.name
+                elif item_date.isoformat() >= start.isoformat() and item_date.isoformat() <= end.isoformat():
+                    enroll = enrollment['organization']['name']
                     break
         return enroll
 
@@ -702,9 +721,9 @@ class Enrich(ElasticItems):
         if enrollments:
             for enrollment in enrollments:
                 if not item_date:
-                    enrolls.append(enrollment.organization.name)
-                elif enrollment.start <= item_date <= enrollment.end:
-                    enrolls.append(enrollment.organization.name)
+                    enrolls.append(enrollment['organization']['name'])
+                elif str_to_datetime(enrollment['start']).isoformat() <= item_date.isoformat() <= str_to_datetime(enrollment['end']).isoformat():
+                    enrolls.append(enrollment['organization']['name'])
         else:
             enrolls.append(self.unaffiliated_group)
 
@@ -727,6 +746,26 @@ class Enrich(ElasticItems):
             rol + MULTI_ORG_NAMES: [empty_field]
         }
 
+    def add_identity(self, email, name, backend_name, username):
+        try:
+            # Find the uuid for a given id.
+            op = Operation(SortingHatSchema.SortingHatMutation)
+            args = {
+                "email": email,
+                "name": name,
+                "source": backend_name,
+                "username": username
+            }
+            args = {k: v for k, v in args.items() if v}
+            identity = op.add_identity(**args)
+            identity.uuid()
+            result = self.sh_db.execute(op)
+            uuid = result['data']['addIdentity']['uuid']
+        except SortingHatClientError as e:
+            msg = e.errors[0]['message']
+            uuid = msg.split("'")[1]
+        return uuid
+
     def get_item_no_sh_fields(self, identity, rol):
         """ Create an item with reasonable data when SH is not enabled """
 
@@ -738,8 +777,8 @@ class Enrich(ElasticItems):
         if not (username or email or name):
             return self.__get_item_sh_fields_empty(rol)
 
-        uuid = utils.uuid(backend_name, email=email,
-                          name=name, username=username)
+        uuid = self.add_identity(email, name, backend_name, username)
+
         return {
             rol + "_id": uuid,
             rol + "_uuid": uuid,
@@ -806,14 +845,8 @@ class Enrich(ElasticItems):
         return eitem_sh
 
     def get_profile_sh(self, uuid):
-        profile = {}
 
-        u = self.get_unique_identity(uuid)
-        if u.profile:
-            profile['name'] = u.profile.name
-            profile['email'] = u.profile.email
-            profile['gender'] = u.profile.gender
-            profile['gender_acc'] = u.profile.gender_acc
+        profile = self.get_unique_identity(uuid)
 
         return profile
 
@@ -926,11 +959,52 @@ class Enrich(ElasticItems):
 
     @lru_cache()
     def get_enrollments(self, uuid):
-        return api.enrollments(self.sh_db, uuid)
+        args = {
+            'filters': {
+                'uuid': uuid
+            }
+        }
+        try:
+            op = Operation(SortingHatSchema.Query)
+            op.individuals(**args)
+            individual = op.individuals().entities()
+            individual.mk()
+            enrollments = individual.enrollments()
+            enrollments.organization().name()
+            enrollments.start()
+            enrollments.end()
+            result = self.sh_db.execute(op)
+            enroll = result['data']['individuals']['entities'][0]['enrollments']
+        except SortingHatClientError as e:
+            logger.error("[sortinghat] Error get enrollments {}: {}".format(uuid, e.errors[0]['message']))
+            enroll = None
+
+        return enroll
 
     @lru_cache()
     def get_unique_identity(self, uuid):
-        return api.unique_identities(self.sh_db, uuid)[0]
+        args = {
+            'filters': {
+                'uuid': uuid
+            }
+        }
+        try:
+            op = Operation(SortingHatSchema.Query)
+            op.individuals(**args)
+            individual = op.individuals().entities()
+            individual.mk()
+            profile = individual.profile()
+            profile.name()
+            profile.email()
+            profile.gender()
+            profile.gender_acc()
+            result = self.sh_db.execute(op)
+            p = result['data']['individuals']['entities'][0]['profile']
+        except SortingHatClientError as e:
+            logger.error("[sortinghat] Error get unique identity {}: {}".format(uuid, e.errors[0]['message']))
+            p = None
+
+        return p
 
     @lru_cache()
     def get_uuid_from_id(self, sh_id):
@@ -965,29 +1039,22 @@ class Enrich(ElasticItems):
             logger.warning("Name, email and username are none in {}".format(backend_name))
             return sh_ids
 
-        try:
-            # Find the uuid for a given id.
-            id = utils.uuid(backend_name, email=iden['email'],
-                            name=iden['name'], username=iden['username'])
+        id = self.get_uuid(self.sh_db, iden['email'], iden['name'], backend_name, iden['username'])
 
-            if not id:
-                logger.warning("Id not found in SortingHat for name: {}, email: {} and username: {} in {}".format(
-                               iden['name'], iden['email'], iden['username'], backend_name))
+        if not id:
+            logger.warning("Id not found in SortingHat for name: {}, email: {} and username: {} in {}".format(
+                           iden['name'], iden['email'], iden['username'], backend_name))
+            return sh_ids
+
+        try:
+            entities = self.get_entities(self.sh_db, id)
+            if len(entities) == 0:
                 return sh_ids
 
-            with self.sh_db.connect() as session:
-                identity_found = api.find_identity(session, id)
-
-                if not identity_found:
-                    return sh_ids
-
-                sh_ids['id'] = identity_found.id
-                sh_ids['uuid'] = identity_found.uuid
-        except InvalidValueError:
+            sh_ids['id'] = entities[0]['identities'][0]['uuid']
+            sh_ids['uuid'] = entities[0]['mk']
+        except SortingHatClientError:
             msg = "None Identity found {}".format(backend_name)
-            logger.debug(msg)
-        except NotFoundError:
-            msg = "Identity not found in SortingHat {}".format(backend_name)
             logger.debug(msg)
         except UnicodeEncodeError:
             msg = "UnicodeEncodeError {}, identity: {}".format(backend_name, identity)
@@ -997,6 +1064,46 @@ class Enrich(ElasticItems):
             logger.error(msg)
 
         return sh_ids
+
+    @staticmethod
+    def get_entities(db, id):
+        args = {
+            'filters': {
+                'uuid': id
+            }
+        }
+        try:
+            op = Operation(SortingHatSchema.Query)
+            op.individuals(**args)
+            individual = op.individuals().entities()
+            individual.mk()
+            individual.identities().uuid()
+            result = db.execute(op)
+            entities = result['data']['individuals']['entities']
+        except SortingHatClientError as e:
+            logger.error("[sortinghat] Error get entities {}: {}".format(id, e.errors[0]['message']))
+        return entities
+
+    @staticmethod
+    def get_uuid(db, email, name, source, username):
+        try:
+            # Find the uuid for a given id.
+            op = Operation(SortingHatSchema.SortingHatMutation)
+            args = {
+                "email": email,
+                "name": name,
+                "source": source,
+                "username": username
+            }
+            args = {k: v for k, v in args.items() if v}
+            identity = op.add_identity(**args)
+            identity.uuid()
+            result = db.execute(op)
+            id = result['data']['addIdentity']['uuid']
+        except SortingHatClientError as e:
+            msg = e.errors[0]['message']
+            id = msg.split("'")[1]
+        return id
 
     def copy_raw_fields(self, copy_fields, source, target):
         """Copy fields from item to enriched item."""
