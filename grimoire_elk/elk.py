@@ -407,8 +407,7 @@ def do_studies(ocean_backend, enrich_backend, studies_args, retention_time=None)
 
 def enrich_backend(url, clean, backend_name, backend_params, cfg_section_name,
                    ocean_index=None,
-                   ocean_index_enrich=None,
-                   db_projects_map=None, json_projects_map=None,
+                   ocean_index_enrich=None, json_projects_map=None,
                    db_sortinghat=None,
                    no_incremental=False, only_identities=False,
                    github_token=None, studies=False, only_studies=False,
@@ -453,7 +452,7 @@ def enrich_backend(url, clean, backend_name, backend_params, cfg_section_name,
         if events_enrich:
             enrich_index += "_events"
 
-        enrich_backend = connector[2](db_sortinghat, db_projects_map, json_projects_map,
+        enrich_backend = connector[2](db_sortinghat, json_projects_map,
                                       db_user, db_password, db_host)
         enrich_backend.set_params(backend_params)
         # store the cfg section name in the enrich backend to recover the corresponding project name in projects.json

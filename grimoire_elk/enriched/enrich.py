@@ -54,12 +54,13 @@ from .. import __version__
 
 logger = logging.getLogger(__name__)
 
-try:
-    import pymysql
-    MYSQL_LIBS = True
-except ImportError:
-    logger.info("MySQL not available")
-    MYSQL_LIBS = False
+# try:
+#     import pymysql
+#
+#     MYSQL_LIBS = True
+# except ImportError:
+#     logger.info("MySQL not available")
+#     MYSQL_LIBS = False
 
 try:
     from sortinghat.cli.client import (SortingHatClient,
@@ -71,7 +72,6 @@ try:
 except ImportError:
     logger.info("SortingHat not available")
     SORTINGHAT_LIBS = False
-
 
 UNKNOWN_PROJECT = 'unknown'
 DEFAULT_PROJECT = 'Main'
@@ -91,6 +91,7 @@ def metadata(func):
     the gelk revision used.
 
     """
+
     @functools.wraps(func)
     def decorator(self, *args, **kwargs):
         eitem = func(self, *args, **kwargs)
@@ -101,11 +102,11 @@ def metadata(func):
         }
         eitem.update(metadata)
         return eitem
+
     return decorator
 
 
 class Enrich(ElasticItems):
-
     sh_db = None
     kibiter_version = None
     RAW_FIELDS_COPY = ["metadata__updated_on", "metadata__timestamp",
@@ -114,8 +115,8 @@ class Enrich(ElasticItems):
 
     ONION_INTERVAL = seconds = 3600 * 24 * 7
 
-    def __init__(self, db_sortinghat=None, db_projects_map=None, json_projects_map=None,
-                 db_user='', db_password='', db_host='', insecure=True, db_port='8000', db_path='graphql/'):
+    def __init__(self, db_sortinghat=None, json_projects_map=None, db_user='',
+                 db_password='', db_host='', insecure=True, db_port='8000', db_path='graphql/'):
 
         perceval_backend = None
         super().__init__(perceval_backend, insecure=insecure)
@@ -128,11 +129,11 @@ class Enrich(ElasticItems):
         if db_sortinghat:
             # self.sh_db = Database("root", "", db_sortinghat, "mariadb")
             if not Enrich.sh_db:
-                 client = SortingHatClient(host=db_host, port=db_port,
-                                           path=db_path, ssl=False,
-                                           user=db_user, password=db_password)
-                 client.connect()
-                 Enrich.sh_db = client
+                client = SortingHatClient(host=db_host, port=db_port,
+                                          path=db_path, ssl=False,
+                                          user=db_user, password=db_password)
+                client.connect()
+                Enrich.sh_db = client
 
             self.sortinghat = True
 
@@ -144,13 +145,6 @@ class Enrich(ElasticItems):
                 self.json_projects = json.load(data_file)
                 # If we have JSON projects always use them for mapping
                 self.prjs_map = self.__convert_json_to_projects_map(self.json_projects)
-        if not self.json_projects:
-            if db_projects_map and not MYSQL_LIBS:
-                raise RuntimeError("Projects configured but MySQL libraries not available.")
-            if db_projects_map and not self.json_projects:
-                self.prjs_map = self.__get_projects_map(db_projects_map,
-                                                        db_user, db_password,
-                                                        db_host)
 
         if self.prjs_map and self.json_projects:
             # logger.info("Comparing db and json projects")
@@ -307,32 +301,6 @@ class Enrich(ElasticItems):
         logger.debug("Number of db projects: {}".format(db_projects))
         logger.debug("Number of json projects: {} (>={})".format(json.keys(), db_projects))
 
-    def __get_projects_map(self, db_projects_map, db_user=None, db_password=None, db_host=None):
-        # Read the repo to project mapping from a database
-        ds_repo_to_prj = {}
-
-        db = pymysql.connect(user=db_user, passwd=db_password, host=db_host,
-                             db=db_projects_map)
-        cursor = db.cursor()
-
-        query = """
-            SELECT data_source, p.id, pr.repository_name
-            FROM projects p
-            JOIN project_repositories pr ON p.project_id=pr.project_id
-        """
-
-        res = int(cursor.execute(query))
-        if res > 0:
-            rows = cursor.fetchall()
-            for row in rows:
-                [ds, name, repo] = row
-                if ds not in ds_repo_to_prj:
-                    ds_repo_to_prj[ds] = {}
-                ds_repo_to_prj[ds][repo] = name
-        else:
-            raise RuntimeError("Can't find projects mapping in {}".format(db_projects_map))
-        return ds_repo_to_prj
-
     def get_field_unique_id(self):
         """ Field in the raw item with the unique id """
         return "uuid"
@@ -397,7 +365,7 @@ class Enrich(ElasticItems):
                 rich_item = self.get_rich_item(item)
                 data_json = json.dumps(rich_item)
                 bulk_json += '{"index" : {"_id" : "%s" } }\n' % \
-                    (item[self.get_field_unique_id()])
+                             (item[self.get_field_unique_id()])
                 bulk_json += data_json + "\n"  # Bulk document
                 current += 1
             else:
@@ -405,8 +373,8 @@ class Enrich(ElasticItems):
                 for rich_event in rich_events:
                     data_json = json.dumps(rich_event)
                     bulk_json += '{"index" : {"_id" : "%s_%s" } }\n' % \
-                        (item[self.get_field_unique_id()],
-                         rich_event[self.get_field_event_unique_id()])
+                                 (item[self.get_field_unique_id()],
+                                  rich_event[self.get_field_event_unique_id()])
                     bulk_json += data_json + "\n"  # Bulk document
                     current += 1
 
@@ -480,11 +448,11 @@ class Enrich(ElasticItems):
 
         return last_update
 
-#    def get_elastic_mappings(self):
-#        """ Mappings for enriched indexes """
-#
-#        mapping = '{}'
-#        return {"items": mapping}
+    # def get_elastic_mappings(self):
+    #     """ Mappings for enriched indexes """
+    #
+    #     mapping = '{}'
+    #     return {"items": mapping}
 
     def get_elastic_analyzers(self):
         """ Custom analyzers for our indexes  """
@@ -702,7 +670,8 @@ class Enrich(ElasticItems):
             for enrollment in enrollments:
                 if not item_date:
                     enrolls.append(enrollment['organization']['name'])
-                elif str_to_datetime(enrollment['start']).isoformat() <= item_date.isoformat() <= str_to_datetime(enrollment['end']).isoformat():
+                elif str_to_datetime(enrollment['start']).isoformat() <= item_date.isoformat() \
+                        <= str_to_datetime(enrollment['end']).isoformat():
                     enrolls.append(enrollment['organization']['name'])
         else:
             enrolls.append(self.unaffiliated_group)
