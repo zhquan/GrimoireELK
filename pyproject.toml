@@ -38,24 +38,26 @@ p2o = 'utils.p2o:main'
 gelk_mapping = 'utils.gelk_mapping:main'
 
 [tool.poetry.dependencies]
-python = "3.5 || ^3.6 || ^3.7"
+python = "^3.6.1"
 elasticsearch = "6.3.1"
 elasticsearch-dsl = "6.3.1"
 requests = "2.21.0"
 urllib3 = "1.24.3"
 geopy = "^2.0.0"
 PyMySQL = "0.9.3"
-pandas = ">=0.22.0,<=0.25.3"
+pandas = "^1.0.5"
 statsmodels = "^0.9.0"
-sortinghat = {branch = "master", git = "https://github.com/chaoss/grimoirelab-sortinghat", optional = true}
+coveralls = "^3.0.1"
+sortinghat = {branch = "muggle", git = "https://github.com/chaoss/grimoirelab-sortinghat", optional = true}
 grimoirelab-toolkit = {branch = "master", git = "https://github.com/chaoss/grimoirelab-toolkit"}
 cereslib = {branch = "master", git = "https://github.com/chaoss/grimoirelab-cereslib"}
 graal = {branch = "master", git = "https://github.com/chaoss/grimoirelab-graal"}
-perceval = {branch = "master", git = "https://github.com/chaoss/grimoirelab-perceval"}
-perceval-mozilla = {branch = "master", git = "https://github.com/chaoss/grimoirelab-perceval-mozilla"}
-perceval-opnfv = {branch = "master", git = "https://github.com/chaoss/grimoirelab-perceval-opnfv"}
-perceval-puppet = {branch = "master", git = "https://github.com/chaoss/grimoirelab-perceval-puppet"}
-perceval-finos = {branch = "master", git = "https://github.com/Bitergia/grimoirelab-perceval-finos"}
+perceval = {branch = "python_3.6.1", git = "https://github.com/zhquan/perceval"}
+perceval-mozilla = {branch = "python_3.6.1", git = "https://github.com/zhquan/grimoirelab-perceval-mozilla"}
+perceval-opnfv = {branch = "python_3.6.1", git = "https://github.com/zhquan/grimoirelab-perceval-opnfv"}
+perceval-puppet = {branch = "python_3.6.1", git = "https://github.com/zhquan/grimoirelab-perceval-puppet"}
+perceval-finos = {branch = "python_3.6.1", git = "https://github.com/zhquan/grimoirelab-perceval-finos"}
+perceval-weblate = {branch = "python_3.6.1", git = "https://github.com/zhquan/grimoirelab-perceval-weblate"}
 
 [tool.poetry.dev-dependencies]
 httpretty = "^0.9.6"
