@@ -245,12 +245,6 @@ class TestGit(TestBaseBackend):
         result = self._test_refresh_identities()
         # ... ?
 
-    def test_refresh_project(self):
-        """Test refresh project field for all sources"""
-
-        result = self._test_refresh_project()
-        # ... ?
-
     def test_demography_study(self):
         """ Test that the demography study works correctly """
 
@@ -362,7 +356,7 @@ class TestGit(TestBaseBackend):
         url = self.es_con + "/test_git_onion/_search?size=20"
         response = requests.get(url, verify=False).json()
         hits = response['hits']['hits']
-        self.assertEqual(len(hits), 12)
+        self.assertEqual(len(hits), 16)
         for hit in hits:
             source = hit['_source']
             self.assertIn('timeframe', source)
