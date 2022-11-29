@@ -72,7 +72,7 @@ jobs:
         mysql --host $DB_HOST --port $DB_PORT -uroot -proot test_projects < tests/test_projects.sql
     - name: Run Sortinghat Server
       run: |
-        git clone -b muggle --single-branch https://github.com/chaoss/grimoirelab-sortinghat /tmp/sortinghat
+        git clone -b pyjwt --single-branch https://github.com/zhquan/grimoirelab-sortinghat /tmp/sortinghat 
         cp tests/sortinghat_settings.py /tmp/sortinghat/config/settings/sortinghat_settings.py
         cd /tmp/sortinghat
         poetry install -vvv
@@ -89,5 +89,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         cd tests
+        pip freeze
         poetry run coverage run --source=grimoire_elk run_tests.py
         poetry run coveralls --service=github
