@@ -1,4 +1,4 @@
--e git+https://github.com/chaoss/grimoirelab-sortinghat/#egg=sortinghat
+-e git+https://github.com/zhquan/grimoirelab-sortinghat@pyjwt#egg=sortinghat
 -e git+https://github.com/chaoss/grimoirelab-toolkit/#egg=grimoirelab-toolkit
 -e git+https://github.com/chaoss/grimoirelab-cereslib/#egg=cereslib
 -e git+https://github.com/chaoss/grimoirelab-graal/#egg=graal
