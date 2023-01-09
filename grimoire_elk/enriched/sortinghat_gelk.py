@@ -91,7 +91,7 @@ class SortingHat(object):
                 logger.warning("[sortinghat] {}".format(msg))
                 uuid = msg.split("'")[1]
             else:
-                raise SortingHatClientError(ex)
+                raise SortingHatClientError(msg)
         return uuid
 
     @classmethod
@@ -112,7 +112,10 @@ class SortingHat(object):
         except UnicodeEncodeError:
             logger.warning("[sortinghat] UnicodeEncodeError. Ignoring it. {} {} {}".format(
                            identity['email'], identity['name'], identity['username']))
-        except Exception:
+        except SortingHatClientError as e:
+            logger.warning("[sortinghat] Client error adding identity: {}. Ignoring it. {} {} {}".format(
+                           e, identity['email'], identity['name'], identity['username']))
+        except Exception as e:
             logger.warning("[sortinghat] Unknown exception adding identity. Ignoring it. {} {} {}".format(
                            identity['email'], identity['name'], identity['username']))
 
